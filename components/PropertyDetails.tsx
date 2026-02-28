@@ -15,14 +15,15 @@ interface PropertyDetailsProps {
   onClose: () => void;
   isFavourite: boolean;
   onToggleFavourite: (id: string) => void;
+  allUsers: User[];
 }
 
-export const PropertyDetails: React.FC<PropertyDetailsProps> = ({ property, onClose, isFavourite, onToggleFavourite }) => {
+export const PropertyDetails: React.FC<PropertyDetailsProps> = ({ property, onClose, isFavourite, onToggleFavourite, allUsers }) => {
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
   const [showContactFlow, setShowContactFlow] = useState(false);
   const [acknowledged, setAcknowledged] = useState(false);
 
-  const owner = MOCK_USERS.find(u => u.id === property.ownerId);
+  const owner = allUsers.find(u => u.id === property.ownerId) || MOCK_USERS.find(u => u.id === property.ownerId);
 
   const nextImage = () => {
     setCurrentImageIndex((prev) => (prev + 1) % property.images.length);

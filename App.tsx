@@ -655,7 +655,11 @@ const App: React.FC = () => {
       setShowAuth(true);
       return;
     }
+    const isAdding = !favourites.includes(propertyId);
     toggleFavourite(propertyId);
+    if (isAdding) {
+      setActiveTab('favourites');
+    }
   };
 
   const handleScan = (code: string) => {
@@ -1060,6 +1064,7 @@ const App: React.FC = () => {
             onClose={() => setSelectedPropertyId(null)}
             isFavourite={favourites.includes(selectedProperty.id)}
             onToggleFavourite={handleToggleFavourite}
+            allUsers={allUsers}
           />
         )}
       </AnimatePresence>

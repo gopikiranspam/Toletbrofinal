@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useRef } from 'react';
-import { Html5QrcodeScanner } from 'html5-qrcode';
-import { Camera, Search, X, QrCode, Zap, ShieldCheck, Info, Loader2 } from 'lucide-react';
+import { Html5Qrcode } from 'html5-qrcode';
+import { Camera, Search, X, QrCode, Zap, ShieldCheck, Info, Loader2, Image as ImageIcon, Flashlight } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
 interface QRScannerProps {
@@ -11,45 +11,96 @@ interface QRScannerProps {
 export const QRScanner: React.FC<QRScannerProps> = ({ onScan, onClose }) => {
   const [manualCode, setManualCode] = useState('');
   const [isInitializing, setIsInitializing] = useState(true);
-  const scannerRef = useRef<Html5QrcodeScanner | null>(null);
+  const [isFlashOn, setIsFlashOn] = useState(false);
+  const [hasFlash, setHasFlash] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const html5QrCodeRef = useRef<Html5Qrcode | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    // Small delay to ensure DOM is ready and avoid race conditions with React 19
-    const timer = setTimeout(() => {
+    const startScanner = async () => {
       try {
-        scannerRef.current = new Html5QrcodeScanner(
-          "reader",
-          { 
-            fps: 20, 
-            qrbox: { width: 250, height: 250 },
-            aspectRatio: 1.0
-          },
-          /* verbose= */ false
-        );
+        const html5QrCode = new Html5Qrcode("reader");
+        html5QrCodeRef.current = html5QrCode;
 
-        scannerRef.current.render(
+        const config = { fps: 20, qrbox: { width: 250, height: 250 } };
+        
+        await html5QrCode.start(
+          { facingMode: "environment" },
+          config,
           (decodedText) => {
             onScan(decodedText);
-            scannerRef.current?.clear();
+            stopScanner();
           },
-          (error) => {
+          (errorMessage) => {
             // Quietly handle scan errors
           }
         );
+
+        // Check for flash support
+        try {
+          const capabilities = html5QrCode.getRunningTrackCapabilities();
+          setHasFlash(!!(capabilities as any).torch);
+        } catch (capErr) {
+          console.warn("Could not get camera capabilities:", capErr);
+          setHasFlash(false);
+        }
+        
         setIsInitializing(false);
       } catch (err) {
         console.error("Scanner init error:", err);
+        setError("Could not access camera. Please check permissions.");
         setIsInitializing(false);
       }
-    }, 500);
+    };
+
+    const timer = setTimeout(startScanner, 500);
 
     return () => {
       clearTimeout(timer);
-      if (scannerRef.current) {
-        scannerRef.current.clear().catch(err => console.error("Failed to clear scanner", err));
-      }
+      stopScanner();
     };
   }, [onScan]);
+
+  const stopScanner = async () => {
+    if (html5QrCodeRef.current && html5QrCodeRef.current.isScanning) {
+      try {
+        await html5QrCodeRef.current.stop();
+      } catch (err) {
+        console.error("Failed to stop scanner", err);
+      }
+    }
+  };
+
+  const toggleFlash = async () => {
+    if (!html5QrCodeRef.current || !hasFlash) return;
+    try {
+      const newState = !isFlashOn;
+      await html5QrCodeRef.current.applyVideoConstraints({
+        advanced: [{ torch: newState } as any]
+      });
+      setIsFlashOn(newState);
+    } catch (err) {
+      console.error("Flash toggle error:", err);
+    }
+  };
+
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !html5QrCodeRef.current) return;
+
+    try {
+      setIsInitializing(true);
+      const decodedText = await html5QrCodeRef.current.scanFile(file, true);
+      onScan(decodedText);
+      stopScanner();
+    } catch (err) {
+      console.error("File scan error:", err);
+      alert("Could not find a valid QR code in this image.");
+    } finally {
+      setIsInitializing(false);
+    }
+  };
 
   const handleManualSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -108,13 +159,48 @@ export const QRScanner: React.FC<QRScannerProps> = ({ onScan, onClose }) => {
                   <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Initializing Optics...</span>
                 </div>
               )}
+              {error && (
+                <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 z-20 bg-slate-950 p-6 text-center">
+                  <Camera className="w-8 h-8 text-rose-500 mb-2" />
+                  <p className="text-xs font-bold text-slate-400">{error}</p>
+                  <button onClick={() => window.location.reload()} className="mt-4 px-4 py-2 bg-indigo-600 rounded-xl text-[10px] font-black uppercase tracking-widest">Retry</button>
+                </div>
+              )}
               <div id="reader" className="w-full h-full"></div>
               
               {/* Scanning Animation Overlay */}
-              <div className="absolute inset-0 pointer-events-none z-10">
-                <div className="absolute inset-x-0 top-0 h-1/2 bg-gradient-to-b from-indigo-500/5 to-transparent animate-scan-line"></div>
-                <div className="absolute inset-0 border-[40px] border-slate-950/40"></div>
-              </div>
+              {!isInitializing && !error && (
+                <div className="absolute inset-0 pointer-events-none z-10">
+                  <div className="absolute inset-x-0 top-0 h-1/2 bg-gradient-to-b from-indigo-500/5 to-transparent animate-scan-line"></div>
+                  <div className="absolute inset-0 border-[40px] border-slate-950/40"></div>
+                </div>
+              )}
+
+              {/* Controls Overlay */}
+              {!isInitializing && !error && (
+                <div className="absolute bottom-4 left-0 right-0 flex justify-center gap-4 z-20">
+                  <button 
+                    onClick={toggleFlash}
+                    disabled={!hasFlash}
+                    className={`p-4 rounded-2xl backdrop-blur-md border transition-all ${isFlashOn ? 'bg-indigo-600 border-indigo-400 text-white shadow-lg shadow-indigo-600/40' : 'bg-slate-900/80 border-slate-700 text-slate-300 hover:bg-slate-800'}`}
+                  >
+                    <Flashlight className={`w-5 h-5 ${!hasFlash && 'opacity-20'}`} />
+                  </button>
+                  <button 
+                    onClick={() => fileInputRef.current?.click()}
+                    className="p-4 rounded-2xl bg-slate-900/80 backdrop-blur-md border border-slate-700 text-slate-300 hover:bg-slate-800 transition-all"
+                  >
+                    <ImageIcon className="w-5 h-5" />
+                  </button>
+                  <input 
+                    type="file" 
+                    ref={fileInputRef} 
+                    className="hidden" 
+                    accept="image/*" 
+                    onChange={handleFileUpload}
+                  />
+                </div>
+              )}
             </div>
           </div>
 
@@ -170,22 +256,11 @@ export const QRScanner: React.FC<QRScannerProps> = ({ onScan, onClose }) => {
         .animate-scan-line {
           animation: scan-line 3s linear infinite;
         }
-        #reader__status_span { display: none !important; }
-        #reader__dashboard_section_csr button {
-          background: #4f46e5 !important;
-          color: white !important;
-          border: none !important;
-          padding: 8px 16px !important;
-          border-radius: 12px !important;
-          font-size: 11px !important;
-          font-weight: 800 !important;
-          text-transform: uppercase !important;
-          letter-spacing: 1px !important;
-          cursor: pointer !important;
-        }
         #reader video {
           border-radius: 24px !important;
           object-fit: cover !important;
+          width: 100% !important;
+          height: 100% !important;
         }
       `}} />
     </motion.div>

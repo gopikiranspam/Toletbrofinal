@@ -4,7 +4,7 @@ import { User, UserType, Language } from '../types';
 import { 
   User as UserIcon, Shield, ChevronRight, Package, Smartphone, 
   Download, Share2, Printer, ArrowLeft, Loader2, QrCode,
-  CheckCircle2, AlertCircle, LogOut, BellOff, MessageSquare, PhoneCall, Plus, X as CloseIcon, Clock, Calendar, RefreshCw, Tags, Settings2, Sparkles
+  CheckCircle2, AlertCircle, LogOut, BellOff, MessageSquare, MessageCircle, PhoneCall, Plus, X as CloseIcon, Clock, Calendar, RefreshCw, Tags, Settings2, Sparkles
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import QRCode from 'qrcode';
@@ -20,7 +20,7 @@ interface ProfileSettingsProps {
   onRepostProperty?: (id: string) => void;
 }
 
-type ToolView = 'main' | 'selection' | 'generate' | 'setup' | 'active_board' | 'privacy' | 'my_properties';
+type ToolView = 'main' | 'selection' | 'generate' | 'setup' | 'active_board' | 'privacy' | 'my_properties' | 'profile';
 
 const DEFAULT_CALL_MESSAGE = "Please contact me only after viewing the home images and details. All details provided are genuine. No negotiation. Vegetarian tenants preferred. Please contact only if you are serious.";
 
@@ -184,108 +184,13 @@ export const ProfileSettings: React.FC<ProfileSettingsProps> = ({
 
       {/* Settings List */}
       <div className="space-y-2.5 md:space-y-3">
-        {/* Profile Section */}
-        <div className="bg-slate-900/50 rounded-2xl md:rounded-3xl border border-slate-800/50 overflow-hidden">
-          <div className="p-3 md:p-4 border-b border-slate-800/50 flex items-center gap-2">
-            <UserIcon className="w-3.5 md:w-4 h-3.5 md:h-4 text-indigo-500" />
-            <h3 className="text-[10px] md:text-xs font-black uppercase tracking-widest text-slate-400">Profile Settings</h3>
-          </div>
-          
-          <div className="divide-y divide-slate-800/50">
-            <div className="p-3 md:p-4 space-y-3 md:space-y-4">
-              <div className="grid grid-cols-1 gap-3 md:gap-4">
-                <div>
-                  <label className="block text-[9px] md:text-[10px] font-black uppercase tracking-widest text-slate-500 mb-1 md:mb-1.5 ml-1">Full Name</label>
-                  <input 
-                    type="text" 
-                    value={name} 
-                    onChange={(e) => setName(e.target.value)} 
-                    className="w-full bg-slate-800/50 border border-slate-700/50 rounded-xl py-2 md:py-2.5 px-3 md:px-4 text-xs md:text-sm font-medium focus:ring-2 focus:ring-indigo-500/20 transition-all" 
-                  />
-                </div>
-                <div>
-                  <label className="block text-[9px] md:text-[10px] font-black uppercase tracking-widest text-slate-500 mb-1 md:mb-1.5 ml-1">Mobile Number</label>
-                  <div className="w-full bg-slate-800/30 border border-slate-700/30 rounded-xl py-2 md:py-2.5 px-3 md:px-4 text-xs md:text-sm font-medium text-slate-400 flex items-center justify-between">
-                    {user.phone}
-                    <Shield className="w-3 h-3 text-slate-600" />
-                  </div>
-                </div>
-                <div>
-                  <label className="block text-[9px] md:text-[10px] font-black uppercase tracking-widest text-slate-500 mb-1 md:mb-1.5 ml-1">Language Preference</label>
-                  <select 
-                    value={language} 
-                    onChange={(e) => setLanguage(e.target.value as Language)} 
-                    className="w-full bg-slate-800/50 border border-slate-700/50 rounded-xl py-2 md:py-2.5 px-3 md:px-4 text-xs md:text-sm font-medium focus:ring-2 focus:ring-indigo-500/20 transition-all appearance-none"
-                  >
-                    <option>English</option>
-                    <option>Hindi</option>
-                    <option>Spanish</option>
-                  </select>
-                </div>
-              </div>
-              <button 
-                onClick={handleSave} 
-                className="w-full bg-indigo-600 hover:bg-indigo-700 py-2.5 md:py-3 rounded-xl text-[10px] md:text-xs font-black uppercase tracking-widest transition-all shadow-lg shadow-indigo-600/10 active:scale-[0.98]"
-              >
-                Update Profile
-              </button>
-            </div>
-          </div>
-        </div>
-
-        {/* My Properties Section */}
-        {user.type === UserType.OWNER && (
-          <div className="bg-slate-900/50 rounded-2xl md:rounded-3xl border border-slate-800/50 overflow-hidden">
-            <button 
-              onClick={() => setToolView('my_properties')}
-              className="w-full flex items-center justify-between p-4 hover:bg-slate-800/30 transition-all group"
-            >
-              <div className="flex items-center gap-3">
-                <div className="w-8 h-8 bg-slate-800 rounded-xl flex items-center justify-center group-hover:bg-indigo-500/10 transition-all">
-                  <Package className="w-4 h-4 text-slate-400 group-hover:text-indigo-400" />
-                </div>
-                <span className="text-xs font-bold text-slate-300">My Properties</span>
-              </div>
-              <ChevronRight className="w-4 h-4 text-slate-600" />
-            </button>
-          </div>
-        )}
-
-        {/* Preferences Section */}
-        <div className="bg-slate-900/50 rounded-2xl md:rounded-3xl border border-slate-800/50 overflow-hidden">
-          <div className="p-3 md:p-4 border-b border-slate-800/50 flex items-center gap-2">
-            <Settings2 className="w-3.5 md:w-4 h-3.5 md:h-4 text-indigo-500" />
-            <h3 className="text-[10px] md:text-xs font-black uppercase tracking-widest text-slate-400">App Preferences</h3>
-          </div>
-          <div className="p-3 md:p-4 space-y-3">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-xs font-bold text-white">Push Notifications</p>
-                <p className="text-[9px] text-slate-500 uppercase font-bold">New property alerts</p>
-              </div>
-              <button className="w-8 h-4 bg-indigo-600 rounded-full relative">
-                <div className="absolute right-1 top-1 w-2 h-2 bg-white rounded-full" />
-              </button>
-            </div>
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-xs font-bold text-white">Email Updates</p>
-                <p className="text-[9px] text-slate-500 uppercase font-bold">Weekly market reports</p>
-              </div>
-              <button className="w-8 h-4 bg-slate-700 rounded-full relative">
-                <div className="absolute left-1 top-1 w-2 h-2 bg-white rounded-full" />
-              </button>
-            </div>
-          </div>
-        </div>
-
-        {/* Owner Specific Tools */}
+        {/* Smart Tolet Board - Moved to First */}
         {user.type === UserType.OWNER && (
           <div className="bg-slate-900/50 rounded-3xl border border-slate-800/50 overflow-hidden">
             <div className="p-4 border-b border-slate-800/50 flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <Package className="w-4 h-4 text-indigo-500" />
-                <h3 className="text-xs font-black uppercase tracking-widest text-slate-400">Smart Board</h3>
+                <h3 className="text-xs font-black uppercase tracking-widest text-slate-400">Smart Tolet Board</h3>
               </div>
               {toolView !== 'main' && (
                 <button 
@@ -394,7 +299,7 @@ export const ProfileSettings: React.FC<ProfileSettingsProps> = ({
                         onUpdate({ qrCode: code });
                         setToolView('main');
                         alert('Board linked successfully!');
-                      }} />
+                      }} onClose={() => setToolView('setup')} />
                     </div>
                     <p className="text-[10px] text-center text-slate-500 font-bold uppercase tracking-widest">Position QR code within the frame</p>
                   </motion.div>
@@ -429,6 +334,14 @@ export const ProfileSettings: React.FC<ProfileSettingsProps> = ({
 
                 {toolView === 'privacy' && (
                   <motion.div key="privacy" initial={{ opacity: 0, x: 10 }} animate={{ opacity: 1, x: 0 }} className="space-y-4">
+                    <div className="p-3 bg-indigo-500/10 rounded-2xl border border-indigo-500/20 mb-4">
+                      <div className="flex items-center gap-2 mb-1">
+                        <Shield className="w-3.5 h-3.5 text-indigo-400" />
+                        <span className="text-[10px] font-black uppercase tracking-widest text-indigo-400">Privacy Controls</span>
+                      </div>
+                      <p className="text-[9px] text-slate-400 leading-relaxed">Manage how tenants can interact with you through the Smart Board.</p>
+                    </div>
+
                     <div className="space-y-3">
                       <div className="flex items-center justify-between p-4 bg-slate-800/30 rounded-2xl border border-slate-700/50">
                         <div className="flex items-center gap-3">
@@ -438,8 +351,27 @@ export const ProfileSettings: React.FC<ProfileSettingsProps> = ({
                             <p className="text-[9px] text-slate-500 uppercase font-bold">Show before call</p>
                           </div>
                         </div>
-                        <button onClick={() => onUpdate({ showCallMessage: !user.showCallMessage })} className={`w-10 h-5 rounded-full relative transition-all ${user.showCallMessage ? 'bg-indigo-600' : 'bg-slate-700'}`}>
+                        <button 
+                          onClick={() => onUpdate({ showCallMessage: !user.showCallMessage })} 
+                          className={`w-10 h-5 rounded-full relative transition-all ${user.showCallMessage ? 'bg-indigo-600' : 'bg-slate-700'}`}
+                        >
                           <div className={`absolute top-1 w-3 h-3 bg-white rounded-full transition-all ${user.showCallMessage ? 'right-1' : 'left-1'}`} />
+                        </button>
+                      </div>
+
+                      <div className="flex items-center justify-between p-4 bg-slate-800/30 rounded-2xl border border-slate-700/50">
+                        <div className="flex items-center gap-3">
+                          <MessageCircle className="w-4 h-4 text-emerald-400" />
+                          <div>
+                            <p className="text-xs font-bold">Chat Only Mode</p>
+                            <p className="text-[9px] text-slate-500 uppercase font-bold">Disable direct calls</p>
+                          </div>
+                        </div>
+                        <button 
+                          onClick={() => onUpdate({ whatsappOnly: !user.whatsappOnly })} 
+                          className={`w-10 h-5 rounded-full relative transition-all ${user.whatsappOnly ? 'bg-emerald-600' : 'bg-slate-700'}`}
+                        >
+                          <div className={`absolute top-1 w-3 h-3 bg-white rounded-full transition-all ${user.whatsappOnly ? 'right-1' : 'left-1'}`} />
                         </button>
                       </div>
 
@@ -505,10 +437,113 @@ export const ProfileSettings: React.FC<ProfileSettingsProps> = ({
                     </div>
                   </motion.div>
                 )}
+
+                {toolView === 'profile' && (
+                  <motion.div key="profile" initial={{ opacity: 0, x: 10 }} animate={{ opacity: 1, x: 0 }} className="space-y-4">
+                    <div className="space-y-4">
+                      <div>
+                        <label className="block text-[9px] md:text-[10px] font-black uppercase tracking-widest text-slate-500 mb-1 md:mb-1.5 ml-1">Full Name</label>
+                        <input 
+                          type="text" 
+                          value={name} 
+                          onChange={(e) => setName(e.target.value)} 
+                          className="w-full bg-slate-800/50 border border-slate-700/50 rounded-xl py-2 md:py-2.5 px-3 md:px-4 text-xs md:text-sm font-medium focus:ring-2 focus:ring-indigo-500/20 transition-all" 
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[9px] md:text-[10px] font-black uppercase tracking-widest text-slate-500 mb-1 md:mb-1.5 ml-1">Mobile Number</label>
+                        <div className="w-full bg-slate-800/30 border border-slate-700/30 rounded-xl py-2 md:py-2.5 px-3 md:px-4 text-xs md:text-sm font-medium text-slate-400 flex items-center justify-between">
+                          {user.phone}
+                          <Shield className="w-3 h-3 text-slate-600" />
+                        </div>
+                      </div>
+                      <div>
+                        <label className="block text-[9px] md:text-[10px] font-black uppercase tracking-widest text-slate-500 mb-1 md:mb-1.5 ml-1">Language Preference</label>
+                        <select 
+                          value={language} 
+                          onChange={(e) => setLanguage(e.target.value as Language)} 
+                          className="w-full bg-slate-800/50 border border-slate-700/50 rounded-xl py-2 md:py-2.5 px-3 md:px-4 text-xs md:text-sm font-medium focus:ring-2 focus:ring-indigo-500/20 transition-all appearance-none"
+                        >
+                          <option>English</option>
+                          <option>Hindi</option>
+                          <option>Spanish</option>
+                        </select>
+                      </div>
+                      <button 
+                        onClick={handleSave} 
+                        className="w-full bg-indigo-600 hover:bg-indigo-700 py-2.5 md:py-3 rounded-xl text-[10px] md:text-xs font-black uppercase tracking-widest transition-all shadow-lg shadow-indigo-600/10 active:scale-[0.98]"
+                      >
+                        Update Profile
+                      </button>
+                    </div>
+                  </motion.div>
+                )}
               </AnimatePresence>
             </div>
           </div>
         )}
+
+        {/* My Properties Section */}
+        {user.type === UserType.OWNER && (
+          <div className="bg-slate-900/50 rounded-2xl md:rounded-3xl border border-slate-800/50 overflow-hidden">
+            <button 
+              onClick={() => setToolView('my_properties')}
+              className="w-full flex items-center justify-between p-4 hover:bg-slate-800/30 transition-all group"
+            >
+              <div className="flex items-center gap-3">
+                <div className="w-8 h-8 bg-slate-800 rounded-xl flex items-center justify-center group-hover:bg-indigo-500/10 transition-all">
+                  <Package className="w-4 h-4 text-slate-400 group-hover:text-indigo-400" />
+                </div>
+                <span className="text-xs font-bold text-slate-300">My Properties</span>
+              </div>
+              <ChevronRight className="w-4 h-4 text-slate-600" />
+            </button>
+          </div>
+        )}
+
+        {/* Profile Settings Section - Minimized */}
+        <div className="bg-slate-900/50 rounded-2xl md:rounded-3xl border border-slate-800/50 overflow-hidden">
+          <button 
+            onClick={() => setToolView('profile')}
+            className="w-full flex items-center justify-between p-4 hover:bg-slate-800/30 transition-all group"
+          >
+            <div className="flex items-center gap-3">
+              <div className="w-8 h-8 bg-slate-800 rounded-xl flex items-center justify-center group-hover:bg-indigo-500/10 transition-all">
+                <UserIcon className="w-4 h-4 text-slate-400 group-hover:text-indigo-400" />
+              </div>
+              <span className="text-xs font-bold text-slate-300">Profile Settings</span>
+            </div>
+            <ChevronRight className="w-4 h-4 text-slate-600" />
+          </button>
+        </div>
+
+        {/* App Preferences Section */}
+        <div className="bg-slate-900/50 rounded-2xl md:rounded-3xl border border-slate-800/50 overflow-hidden">
+          <div className="p-3 md:p-4 border-b border-slate-800/50 flex items-center gap-2">
+            <Settings2 className="w-3.5 md:w-4 h-3.5 md:h-4 text-indigo-500" />
+            <h3 className="text-[10px] md:text-xs font-black uppercase tracking-widest text-slate-400">App Preferences</h3>
+          </div>
+          <div className="p-3 md:p-4 space-y-3">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-xs font-bold text-white">Push Notifications</p>
+                <p className="text-[9px] text-slate-500 uppercase font-bold">New property alerts</p>
+              </div>
+              <button className="w-8 h-4 bg-indigo-600 rounded-full relative">
+                <div className="absolute right-1 top-1 w-2 h-2 bg-white rounded-full" />
+              </button>
+            </div>
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-xs font-bold text-white">Email Updates</p>
+                <p className="text-[9px] text-slate-500 uppercase font-bold">Weekly market reports</p>
+              </div>
+              <button className="w-8 h-4 bg-slate-700 rounded-full relative">
+                <div className="absolute left-1 top-1 w-2 h-2 bg-white rounded-full" />
+              </button>
+            </div>
+          </div>
+        </div>
 
         {/* Support & Security */}
         <div className="bg-slate-900/50 rounded-3xl border border-slate-800/50 overflow-hidden">
