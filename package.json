@@ -1,0 +1,35 @@
+{
+  "name": "propscan-ai---premium-property-portal",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "tsx server.ts",
+    "build": "vite build",
+    "preview": "vite preview",
+    "lint": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@google/genai": "^1.43.0",
+    "@types/dotenv": "^6.1.1",
+    "@types/express": "^5.0.6",
+    "axios": "^1.13.5",
+    "dotenv": "^17.3.1",
+    "express": "^5.2.1",
+    "firebase": "^12.9.0",
+    "framer-motion": "^12.34.3",
+    "html5-qrcode": "^2.3.8",
+    "jszip": "^3.10.1",
+    "lucide-react": "^0.575.0",
+    "qrcode": "^1.5.3",
+    "react": "^19.2.4",
+    "react-dom": "^19.2.4",
+    "tsx": "^4.21.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.14.0",
+    "@vitejs/plugin-react": "^5.0.0",
+    "typescript": "~5.8.2",
+    "vite": "^6.2.0"
+  }
+}

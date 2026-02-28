@@ -1,0 +1,8 @@
+{
+  "name": "ToletBro - Premium Property Portal",
+  "description": "A high-end property listing application featuring AI image editing, QR-based property discovery, Google Maps grounding, and a multi-modal AI chatbot.",
+  "requestFramePermissions": [
+    "camera",
+    "geolocation"
+  ]
+}
