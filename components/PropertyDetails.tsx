@@ -16,9 +16,13 @@ interface PropertyDetailsProps {
   isFavourite: boolean;
   onToggleFavourite: (id: string) => void;
   allUsers: User[];
+  currentUser: User | null;
+  onRequireAuth: () => void;
 }
 
-export const PropertyDetails: React.FC<PropertyDetailsProps> = ({ property, onClose, isFavourite, onToggleFavourite, allUsers }) => {
+export const PropertyDetails: React.FC<PropertyDetailsProps> = ({ 
+  property, onClose, isFavourite, onToggleFavourite, allUsers, currentUser, onRequireAuth 
+}) => {
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
   const [showContactFlow, setShowContactFlow] = useState(false);
   const [acknowledged, setAcknowledged] = useState(false);
@@ -34,6 +38,10 @@ export const PropertyDetails: React.FC<PropertyDetailsProps> = ({ property, onCl
   };
 
   const handleContactClick = () => {
+    if (!currentUser) {
+      onRequireAuth();
+      return;
+    }
     setShowContactFlow(true);
     setAcknowledged(false);
   };

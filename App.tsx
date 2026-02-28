@@ -14,7 +14,7 @@ import { gemini } from './services/geminiService';
 import { 
   Search, MapPin, Filter, Plus, ChevronRight, Star, QrCode as QrIcon, 
   BarChart3, Globe, Smartphone, Phone, MessageSquare, X, Camera, Image as ImageIcon, 
-  Sparkles, Zap, ShieldCheck, CheckCircle2, ChevronLeft, Loader2, Upload, Navigation, PlusCircle, Building2, Map as MapIcon, Locate, Heart
+  Sparkles, Zap, ShieldCheck, CheckCircle2, ChevronLeft, Loader2, Upload, Navigation, PlusCircle, Building2, Map as MapIcon, Locate, Heart, AlertCircle, Info
 } from 'lucide-react';
 import { auth, db, storage } from './firebase';
 import { 
@@ -51,6 +51,24 @@ const App: React.FC = () => {
   const [allUsers, setAllUsers] = useState<User[]>([]);
   const [selectedPropertyId, setSelectedPropertyId] = useState<string | null>(null);
   const [favourites, setFavourites] = useState<string[]>([]);
+  const [lastScannedQr, setLastScannedQr] = useState<string | null>(null);
+  const [isQrInvalid, setIsQrInvalid] = useState(false);
+
+  useEffect(() => {
+    const handleRouting = () => {
+      const path = window.location.pathname;
+      const match = path.match(/\/properties\/qrcode\/([A-Z0-9]+)/i);
+      if (match) {
+        const code = match[1].toUpperCase();
+        setSearchQuery(code);
+        setLastScannedQr(code);
+        setActiveTab('home');
+        // Clean up URL without reload
+        window.history.replaceState({}, document.title, "/");
+      }
+    };
+    handleRouting();
+  }, []);
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
@@ -107,9 +125,29 @@ const App: React.FC = () => {
   }, []);
 
   useEffect(() => {
+    const q = query(collection(db, "users"));
+    const unsubscribe = onSnapshot(q, (querySnapshot: any) => {
+      const users = querySnapshot.docs.map((doc: any) => ({
+        ...doc.data(),
+        id: doc.id
+      })) as User[];
+      if (users.length > 0) {
+        setAllUsers(users);
+      } else {
+        setAllUsers(MOCK_USERS);
+      }
+    }, (error: any) => {
+      console.error("Error listening to users:", error);
+      setAllUsers(MOCK_USERS);
+    });
+
+    return () => unsubscribe();
+  }, []);
+
+  useEffect(() => {
     const q = query(collection(db, "properties"), orderBy("createdAt", "desc"));
-    const unsubscribe = onSnapshot(q, (querySnapshot) => {
-      const firestoreProps = querySnapshot.docs.map(doc => ({
+    const unsubscribe = onSnapshot(q, (querySnapshot: any) => {
+      const firestoreProps = querySnapshot.docs.map((doc: any) => ({
         ...doc.data(),
         id: doc.id
       })) as Property[];
@@ -296,6 +334,10 @@ const App: React.FC = () => {
     setNewProp(prev => ({ ...prev, images: newImages }));
   };
 
+  const normalizedSearchQuery = searchQuery.trim().toUpperCase();
+  const isQrFormat = /^[A-Z]{3}\d{3}$/.test(normalizedSearchQuery);
+  const qrOwner = isQrFormat ? allUsers.find(u => u.qrCode?.toUpperCase() === normalizedSearchQuery) : null;
+
   const filteredProperties = useMemo(() => {
     let result = properties;
 
@@ -303,25 +345,21 @@ const App: React.FC = () => {
       result = result.filter(p => favourites.includes(p.id));
     }
 
-    const query = searchQuery.trim().toUpperCase();
-
-    if (query) {
-      const isQrFormat = /^[A-Z]{3}\d{3}$/.test(query);
+    if (normalizedSearchQuery) {
       if (isQrFormat) {
-        const owner = allUsers.find(u => u.qrCode?.toUpperCase() === query);
-        if (owner) {
-          result = result.filter(p => p.ownerId === owner.id);
+        if (qrOwner) {
+          result = result.filter(p => p.ownerId === qrOwner.id);
         } else {
           result = result.filter(p => 
-            p.title.toUpperCase().includes(query) ||
-            p.locality.toUpperCase().includes(query)
+            p.title.toUpperCase().includes(normalizedSearchQuery) ||
+            p.locality.toUpperCase().includes(normalizedSearchQuery)
           );
         }
       } else {
         result = result.filter(p => 
-          p.title.toUpperCase().includes(query) ||
-          p.locality.toUpperCase().includes(query) ||
-          p.city.toUpperCase().includes(query)
+          p.title.toUpperCase().includes(normalizedSearchQuery) ||
+          p.locality.toUpperCase().includes(normalizedSearchQuery) ||
+          p.city.toUpperCase().includes(normalizedSearchQuery)
         );
       }
     }
@@ -342,7 +380,7 @@ const App: React.FC = () => {
     }
 
     return result;
-  }, [searchQuery, searchType, properties, allUsers, isNearbyActive, userCoords, radiusFilter]);
+  }, [searchQuery, searchType, properties, allUsers, isNearbyActive, userCoords, radiusFilter, activeTab, favourites, normalizedSearchQuery, isQrFormat, qrOwner]);
 
   const handleUpdateProfile = async (updatedData: Partial<User>) => {
     if (user) {
@@ -663,7 +701,23 @@ const App: React.FC = () => {
   };
 
   const handleScan = (code: string) => {
-    setSearchQuery(code);
+    let serial = code;
+    try {
+      // Check if it's a URL
+      if (code.startsWith('http')) {
+        const url = new URL(code);
+        const match = url.pathname.match(/\/properties\/qrcode\/([A-Z0-9]+)/i);
+        if (match) {
+          serial = match[1];
+        }
+      }
+    } catch (e) {
+      // Not a URL, assume it's the serial
+    }
+
+    setSearchQuery(serial.toUpperCase());
+    setLastScannedQr(serial.toUpperCase());
+    setIsQrInvalid(false);
     setIsScanning(false);
     setActiveTab('home');
     setIsNearbyActive(false);
@@ -782,6 +836,24 @@ const App: React.FC = () => {
                 {!isNearbyActive && <button className="flex items-center gap-1 text-indigo-500 font-semibold hover:text-indigo-400 transition-colors text-xs md:text-sm">View All <ChevronRight className="w-3.5 h-3.5" /></button>}
               </div>
               
+                  {isQrFormat && !qrOwner && searchQuery.trim().toUpperCase() === lastScannedQr && (
+                    <div className="bg-rose-500/10 border border-rose-500/20 p-6 rounded-3xl text-center space-y-3">
+                      <AlertCircle className="w-10 h-10 text-rose-500 mx-auto" />
+                      <h3 className="text-lg font-bold text-white">Invalid or Expired QR Code</h3>
+                      <p className="text-slate-400 text-sm max-w-xs mx-auto">The QR code you scanned does not match any active property owner in our system.</p>
+                      <button onClick={() => { setSearchQuery(''); setLastScannedQr(null); }} className="px-6 py-2 bg-slate-800 rounded-xl text-xs font-bold uppercase tracking-widest">Clear Search</button>
+                    </div>
+                  )}
+
+                  {isQrFormat && qrOwner && filteredProperties.length === 0 && (
+                    <div className="bg-indigo-500/10 border border-indigo-500/20 p-6 rounded-3xl text-center space-y-3">
+                      <Info className="w-10 h-10 text-indigo-500 mx-auto" />
+                      <h3 className="text-lg font-bold text-white">No Properties Found</h3>
+                      <p className="text-slate-400 text-sm max-w-xs mx-auto">This owner currently has no active property listings available for {searchType}.</p>
+                      <button onClick={() => { setSearchQuery(''); setLastScannedQr(null); }} className="px-6 py-2 bg-slate-800 rounded-xl text-xs font-bold uppercase tracking-widest">View All Properties</button>
+                    </div>
+                  )}
+
                   {filteredProperties.length > 0 ? (
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 md:gap-8">
                       {filteredProperties.map(property => (
@@ -1065,6 +1137,8 @@ const App: React.FC = () => {
             isFavourite={favourites.includes(selectedProperty.id)}
             onToggleFavourite={handleToggleFavourite}
             allUsers={allUsers}
+            currentUser={user}
+            onRequireAuth={() => setShowAuth(true)}
           />
         )}
       </AnimatePresence>

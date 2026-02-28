@@ -96,7 +96,15 @@ export const ProfileSettings: React.FC<ProfileSettingsProps> = ({
     if (!ctx) throw new Error("Could not get canvas context");
     ctx.fillStyle = '#FFFFFF';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
-    const qrDataUrl = await QRCode.toDataURL(code, { width: qrSize, margin: 1, color: { dark: '#000000', light: '#FFFFFF' } });
+    
+    // Create the unique hyperlink for the property owner
+    const qrUrl = `${window.location.origin}/properties/qrcode/${code}`;
+    
+    const qrDataUrl = await QRCode.toDataURL(qrUrl, { 
+      width: qrSize, 
+      margin: 1, 
+      color: { dark: '#000000', light: '#FFFFFF' } 
+    });
     const img = new Image();
     await new Promise((resolve) => { img.onload = resolve; img.src = qrDataUrl; });
     ctx.drawImage(img, padding, padding);
