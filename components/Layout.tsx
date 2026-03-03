@@ -1,5 +1,6 @@
 
 import React from 'react';
+import { NavLink, Link, useNavigate } from 'react-router-dom';
 import { User, UserType } from '../types';
 import { Home, Search, Scan, User as UserIcon, LogOut, LayoutDashboard, Settings, ShieldCheck, Package, Heart, PlusCircle } from 'lucide-react';
 
@@ -7,86 +8,76 @@ interface LayoutProps {
   children: React.ReactNode;
   user: User | null;
   onLogout: () => void;
-  activeTab: string;
-  setActiveTab: (tab: string) => void;
   onLoginClick?: () => void;
   scannedOwnerId?: string | null;
 }
 
-export const Layout: React.FC<LayoutProps> = ({ children, user, onLogout, activeTab, setActiveTab, onLoginClick, scannedOwnerId }) => {
+export const Layout: React.FC<LayoutProps> = ({ children, user, onLogout, onLoginClick, scannedOwnerId }) => {
   const isOwner = user?.type === UserType.OWNER;
   const isFinder = user?.type === UserType.FINDER;
+  const navigate = useNavigate();
+
+  const navLinkClass = ({ isActive }: { isActive: boolean }) => 
+    `hover:text-white transition-colors flex items-center gap-2 ${isActive ? 'text-white font-bold' : 'text-slate-400'}`;
+
+  const mobileNavLinkClass = ({ isActive }: { isActive: boolean }) =>
+    `flex flex-col items-center gap-1 ${isActive ? 'text-indigo-500' : 'text-slate-500'}`;
 
   return (
     <div className="min-h-screen bg-slate-950 flex flex-col">
       {/* Top Navbar */}
       <nav className="sticky top-0 z-50 bg-slate-950/80 backdrop-blur-md border-b border-slate-800 px-4 md:px-8 py-3 md:py-4 flex items-center justify-between">
-        <div className="flex items-center gap-2 cursor-pointer" onClick={() => setActiveTab('home')}>
+        <Link to="/" className="flex items-center gap-2 cursor-pointer">
           <div className="bg-indigo-600 p-1.5 md:p-2 rounded-lg">
             <Home className="w-4 h-4 md:w-5 md:h-5 text-white" />
           </div>
           <span className="font-bold text-lg md:text-xl tracking-tight">ToletBro</span>
-        </div>
+        </Link>
 
         {/* Desktop Nav */}
-        <div className="hidden md:flex items-center gap-8 text-sm font-medium text-slate-400">
+        <div className="hidden md:flex items-center gap-8 text-sm font-medium">
           {isOwner ? (
             <>
-              <button 
-                onClick={() => setActiveTab('dashboard')} 
-                className={`hover:text-white transition-colors flex items-center gap-2 ${activeTab === 'dashboard' ? 'text-white font-bold' : ''}`}
-              >
+              <NavLink to="/dashboard" className={navLinkClass}>
                 <LayoutDashboard className="w-4 h-4" />
                 Dashboard
-              </button>
-              <button 
-                onClick={() => setActiveTab('my-properties')} 
-                className={`hover:text-white transition-colors flex items-center gap-2 ${activeTab === 'my-properties' ? 'text-white font-bold' : ''}`}
-              >
+              </NavLink>
+              <NavLink to="/my-properties" className={navLinkClass}>
                 <Package className="w-4 h-4" />
                 My Properties
-              </button>
-              <button 
-                onClick={() => setActiveTab('home')} 
-                className={`hover:text-white transition-colors flex items-center gap-2 ${activeTab === 'home' ? 'text-white font-bold' : ''}`}
-              >
+              </NavLink>
+              <NavLink to="/marketplace" className={navLinkClass}>
                 <Home className="w-4 h-4" />
                 Marketplace
-              </button>
-              <button 
-                onClick={() => setActiveTab('settings')} 
-                className={`hover:text-white transition-colors flex items-center gap-2 ${activeTab === 'settings' ? 'text-white font-bold' : ''}`}
-              >
+              </NavLink>
+              <NavLink to="/profile" className={navLinkClass}>
                 <ShieldCheck className="w-4 h-4" />
                 Smart Tolet Board
-              </button>
+              </NavLink>
             </>
           ) : (
             <>
-              <button onClick={() => setActiveTab('home')} className={`hover:text-white transition-colors flex items-center gap-2 ${activeTab === 'home' ? 'text-white font-bold' : ''}`}>
+              <NavLink to="/" className={navLinkClass} end>
                 <Home className="w-4 h-4" /> Home
-              </button>
-              <button onClick={() => setActiveTab('scan')} className={`hover:text-white transition-colors flex items-center gap-2 ${activeTab === 'scan' ? 'text-white font-bold' : ''}`}>
+              </NavLink>
+              <NavLink to="/scan" className={navLinkClass}>
                 <Scan className="w-4 h-4" /> Scan QR
-              </button>
+              </NavLink>
               {scannedOwnerId && (
-                <button 
-                  onClick={() => setActiveTab('my-properties')} 
-                  className={`hover:text-white transition-colors flex items-center gap-2 ${activeTab === 'my-properties' ? 'text-white font-bold' : ''}`}
-                >
+                <NavLink to={`/properties/qrcode/${scannedOwnerId}`} className={navLinkClass}>
                   <Package className="w-4 h-4" />
                   Owner Properties
-                </button>
+                </NavLink>
               )}
               {(!user || isFinder) && (
-                <button 
-                  onClick={() => setActiveTab('dashboard')} 
-                  className={`flex items-center gap-2 transition-colors font-bold ${activeTab === 'dashboard' ? 'text-indigo-400' : 'text-slate-400 hover:text-indigo-400'}`}
+                <NavLink 
+                  to="/dashboard" 
+                  className={({ isActive }) => `flex items-center gap-2 transition-colors font-bold ${isActive ? 'text-indigo-400' : 'text-slate-400 hover:text-indigo-400'}`}
                 >
                   <PlusCircle className="w-4 h-4" /> List Property
-                </button>
+                </NavLink>
               )}
-              {user?.type === UserType.ADMIN && <button onClick={() => setActiveTab('admin')} className={`hover:text-white transition-colors ${activeTab === 'admin' ? 'text-white font-bold' : ''}`}>Admin Console</button>}
+              {user?.type === UserType.ADMIN && <NavLink to="/admin" className={navLinkClass}>Admin Console</NavLink>}
             </>
           )}
         </div>
@@ -96,7 +87,7 @@ export const Layout: React.FC<LayoutProps> = ({ children, user, onLogout, active
           {/* List Property Link for Mobile Finder */}
           {(!user || isFinder) && (
             <button 
-              onClick={() => setActiveTab('dashboard')} 
+              onClick={() => navigate('/dashboard')} 
               className="md:hidden flex items-center gap-1.5 bg-indigo-600/10 text-indigo-400 px-3 py-1.5 rounded-full text-[10px] font-bold border border-indigo-500/20 active:scale-95 transition-all"
             >
               <PlusCircle className="w-3.5 h-3.5" />
@@ -105,21 +96,21 @@ export const Layout: React.FC<LayoutProps> = ({ children, user, onLogout, active
           )}
 
           {/* Replacement for Logout Button: Favourites */}
-          <button 
-            onClick={() => setActiveTab('favourites')}
-            className={`hidden md:flex p-2.5 rounded-xl transition-all border ${activeTab === 'favourites' ? 'bg-rose-500/10 border-rose-500/30 text-rose-500' : 'bg-slate-800/50 border-slate-700 text-slate-400 hover:text-rose-400'}`}
+          <NavLink 
+            to="/saved"
+            className={({ isActive }) => `hidden md:flex p-2.5 rounded-xl transition-all border ${isActive ? 'bg-rose-500/10 border-rose-500/30 text-rose-500' : 'bg-slate-800/50 border-slate-700 text-slate-400 hover:text-rose-400'}`}
             title="My Favourites"
           >
-            <Heart className={`w-5 h-5 ${activeTab === 'favourites' ? 'fill-current' : ''}`} />
-          </button>
+            <Heart className="w-5 h-5" />
+          </NavLink>
 
           {user ? (
-            <div className="hidden md:flex items-center gap-2 cursor-pointer group" onClick={() => setActiveTab('settings')}>
-              <div className={`w-9 h-9 rounded-xl border flex items-center justify-center transition-all ${activeTab === 'settings' ? 'bg-indigo-600 border-indigo-500 shadow-lg shadow-indigo-600/20' : 'bg-slate-800 border-slate-700 group-hover:border-slate-500'}`}>
-                <UserIcon className={`w-4.5 h-4.5 ${activeTab === 'settings' ? 'text-white' : 'text-slate-400'}`} />
-              </div>
+            <div className="hidden md:flex items-center gap-2 cursor-pointer group" onClick={() => navigate('/profile')}>
+              <NavLink to="/profile" className={({ isActive }) => `w-9 h-9 rounded-xl border flex items-center justify-center transition-all ${isActive ? 'bg-indigo-600 border-indigo-500 shadow-lg shadow-indigo-600/20' : 'bg-slate-800 border-slate-700 group-hover:border-slate-500'}`}>
+                <UserIcon className="w-4.5 h-4.5 text-inherit" />
+              </NavLink>
               <div className="flex flex-col">
-                 <span className={`text-[11px] font-bold transition-colors ${activeTab === 'settings' ? 'text-white' : 'text-slate-300'}`}>{user.name}</span>
+                 <span className="text-[11px] font-bold text-slate-300">{user.name}</span>
                  <button 
                    onClick={(e) => { e.stopPropagation(); onLogout(); }} 
                    className="text-[9px] text-rose-400 uppercase font-black tracking-tighter -mt-1 hover:text-rose-300 transition-colors flex items-center gap-1"
@@ -141,9 +132,9 @@ export const Layout: React.FC<LayoutProps> = ({ children, user, onLogout, active
 
           {/* Mobile Profile Link */}
           {!isOwner && (
-            <button onClick={() => setActiveTab('settings')} className="md:hidden p-2 text-slate-400">
+            <NavLink to="/profile" className="md:hidden p-2 text-slate-400">
               {user ? <UserIcon className="w-5 h-5" /> : <UserIcon className="w-5 h-5 text-indigo-500" />}
-            </button>
+            </NavLink>
           )}
         </div>
       </nav>
@@ -157,45 +148,45 @@ export const Layout: React.FC<LayoutProps> = ({ children, user, onLogout, active
       <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-slate-950/90 backdrop-blur-lg border-t border-slate-800 px-4 py-3 flex justify-between items-center z-50">
         {isOwner ? (
           <>
-            <button onClick={() => setActiveTab('dashboard')} className={`flex flex-col items-center gap-1 ${activeTab === 'dashboard' ? 'text-indigo-500' : 'text-slate-500'}`}>
+            <NavLink to="/dashboard" className={mobileNavLinkClass}>
               <LayoutDashboard className="w-5 h-5" />
               <span className="text-[9px] font-medium">Dashboard</span>
-            </button>
-            <button onClick={() => setActiveTab('my-properties')} className={`flex flex-col items-center gap-1 ${activeTab === 'my-properties' ? 'text-indigo-500' : 'text-slate-500'}`}>
+            </NavLink>
+            <NavLink to="/my-properties" className={mobileNavLinkClass}>
               <Package className="w-5 h-5" />
               <span className="text-[9px] font-medium">My Props</span>
-            </button>
-            <button onClick={() => setActiveTab('home')} className={`flex flex-col items-center gap-1 ${activeTab === 'home' ? 'text-indigo-500' : 'text-slate-500'}`}>
+            </NavLink>
+            <NavLink to="/marketplace" className={mobileNavLinkClass}>
               <Home className="w-5 h-5" />
               <span className="text-[9px] font-medium">Market</span>
-            </button>
-            <button onClick={() => setActiveTab('settings')} className={`flex flex-col items-center gap-1 ${activeTab === 'settings' ? 'text-indigo-500' : 'text-slate-500'}`}>
+            </NavLink>
+            <NavLink to="/profile" className={mobileNavLinkClass}>
               <UserIcon className="w-5 h-5" />
               <span className="text-[9px] font-medium">Profile</span>
-            </button>
+            </NavLink>
           </>
         ) : (
           <>
-            <button onClick={() => setActiveTab('home')} className={`flex flex-col items-center gap-1 ${activeTab === 'home' ? 'text-indigo-500' : 'text-slate-500'}`}>
+            <NavLink to="/" className={mobileNavLinkClass} end>
               <Home className="w-5 h-5" />
               <span className="text-[9px] font-medium">Home</span>
-            </button>
-            <button onClick={() => setActiveTab('scan')} className={`flex flex-col items-center gap-1 ${activeTab === 'scan' ? 'text-indigo-500' : 'text-slate-500'}`}>
+            </NavLink>
+            <NavLink to="/scan" className={mobileNavLinkClass}>
               <div className="bg-indigo-600 p-2.5 rounded-full -mt-8 border-4 border-slate-950 shadow-xl shadow-indigo-600/30">
                 <Scan className="w-5 h-5 text-white" />
               </div>
               <span className="text-[9px] font-medium">Scan</span>
-            </button>
+            </NavLink>
             {scannedOwnerId ? (
-              <button onClick={() => setActiveTab('my-properties')} className={`flex flex-col items-center gap-1 ${activeTab === 'my-properties' ? 'text-indigo-500' : 'text-slate-500'}`}>
+              <NavLink to={`/properties/qrcode/${scannedOwnerId}`} className={mobileNavLinkClass}>
                 <Package className="w-5 h-5" />
                 <span className="text-[9px] font-medium">Owner</span>
-              </button>
+              </NavLink>
             ) : (
-              <button onClick={() => setActiveTab('favourites')} className={`flex flex-col items-center gap-1 ${activeTab === 'favourites' ? 'text-indigo-500' : 'text-slate-500'}`}>
-                <Heart className={`w-5 h-5 ${activeTab === 'favourites' ? 'fill-current' : ''}`} />
+              <NavLink to="/saved" className={mobileNavLinkClass}>
+                <Heart className="w-5 h-5" />
                 <span className="text-[9px] font-medium">Saved</span>
-              </button>
+              </NavLink>
             )}
           </>
         )}
@@ -216,10 +207,10 @@ export const Layout: React.FC<LayoutProps> = ({ children, user, onLogout, active
             </p>
           </div>
           <div>
-            <h4 className="font-semibold text-sm md:text-base mb-4 md:mb-6">Explore</h4>
+            <h4 className="font-semibold text-sm md:text-base mb-4 md:mb-6"> Explore</h4>
             <ul className="space-y-3 md:space-y-4 text-xs md:text-sm text-slate-400">
-              <li><button onClick={() => setActiveTab('home')} className="hover:text-white transition-colors">Home</button></li>
-              <li><button onClick={() => setActiveTab('settings')} className="hover:text-white transition-colors">Smart Tolet Board</button></li>
+              <li><Link to="/" className="hover:text-white transition-colors">Home</Link></li>
+              <li><Link to="/profile" className="hover:text-white transition-colors">Smart Tolet Board</Link></li>
               <li><button className="hover:text-white transition-colors">Property Management</button></li>
               <li><button className="hover:text-white transition-colors">Virtual Tours</button></li>
             </ul>
@@ -232,13 +223,13 @@ export const Layout: React.FC<LayoutProps> = ({ children, user, onLogout, active
               <li><button className="hover:text-white transition-colors">Terms of Service</button></li>
               <li><button className="hover:text-white transition-colors">Contact Support</button></li>
               <li>
-                <button 
-                  onClick={() => setActiveTab('admin')}
+                <Link 
+                  to="/admin"
                   className="flex items-center gap-2 text-indigo-400 hover:text-indigo-300 transition-colors font-bold mt-1 md:mt-2"
                 >
                   <ShieldCheck className="w-3.5 h-3.5 md:w-4 md:h-4" />
                   Admin Console
-                </button>
+                </Link>
               </li>
             </ul>
           </div>

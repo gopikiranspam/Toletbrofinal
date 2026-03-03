@@ -1,5 +1,6 @@
 
 import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { BrowserRouter, Routes, Route, useNavigate, useLocation, useParams, Navigate } from 'react-router-dom';
 import { Auth } from './components/Auth';
 import { Layout } from './components/Layout';
 import { ChatBot } from './components/ChatBot';
@@ -40,11 +41,12 @@ const getDistance = (lat1: number, lon1: number, lat2: number, lon2: number) => 
 };
 
 const App: React.FC = () => {
+  const navigate = useNavigate();
+  const location = useLocation();
   const [user, setUser] = useState<User | null>(null);
   const formContainerRef = useRef<HTMLDivElement>(null);
   const [isAuthLoading, setIsAuthLoading] = useState(true);
   const [showAuth, setShowAuth] = useState(false);
-  const [activeTab, setActiveTab] = useState('home');
   const [searchQuery, setSearchQuery] = useState('');
   const [searchType, setSearchType] = useState<'rent' | 'buy'>('rent');
   const [isScanning, setIsScanning] = useState(false);
@@ -70,7 +72,7 @@ const App: React.FC = () => {
         const ownerId = match[1];
         setScannedOwnerId(ownerId);
         setLastScannedQr(ownerId);
-        setActiveTab('my-properties');
+        navigate('/my-properties');
         // Clean up URL without reload
         window.history.replaceState({}, document.title, "/");
       }
@@ -407,7 +409,7 @@ const App: React.FC = () => {
   const filteredProperties = useMemo(() => {
     let result = properties;
 
-    if (activeTab === 'favourites') {
+    if (location.pathname === '/saved') {
       result = result.filter(p => favourites.includes(p.id));
     }
 
@@ -455,7 +457,7 @@ const App: React.FC = () => {
     }
 
     return result;
-  }, [searchQuery, searchType, properties, allUsers, isNearbyActive, userCoords, radiusFilter, activeTab, favourites, normalizedSearchQuery, isQrFormat, qrOwner]);
+  }, [searchQuery, searchType, properties, allUsers, isNearbyActive, userCoords, radiusFilter, location.pathname, favourites, normalizedSearchQuery, isQrFormat, qrOwner]);
 
   const handleUpdateProfile = async (updatedData: Partial<User>) => {
     if (user) {
@@ -478,7 +480,7 @@ const App: React.FC = () => {
     try {
       await signOut(auth);
       setUser(null);
-      setActiveTab('home');
+      navigate('/');
       setSelectedPropertyId(null);
       setIsNearbyActive(false);
     } catch (error) {
@@ -631,7 +633,7 @@ const App: React.FC = () => {
         preferredTenant: 'Anyone'
       });
       
-      setActiveTab('dashboard');
+      navigate('/dashboard');
     } catch (error: any) {
       console.error("Error saving property:", error);
       if (error.code === 'permission-denied') {
@@ -767,19 +769,31 @@ const App: React.FC = () => {
   const isOwner = user?.type === UserType.OWNER;
   const isFinder = user?.type === UserType.FINDER;
 
-  const handleTabChange = (tab: string) => {
-    if (!user && (tab === 'dashboard' || tab === 'settings' || tab === 'favourites' || tab === 'admin' || (tab === 'my-properties' && !scannedOwnerId))) {
+  const handleNavigate = (tab: string) => {
+    const authRequired = ['dashboard', 'settings', 'favourites', 'admin'].includes(tab) || (tab === 'my-properties' && !scannedOwnerId);
+    if (!user && authRequired) {
       setShowAuth(true);
       return;
     }
-    setActiveTab(tab);
+    
+    const routeMap: Record<string, string> = {
+      'home': '/',
+      'dashboard': '/dashboard',
+      'settings': '/profile',
+      'favourites': '/saved',
+      'admin': '/admin',
+      'my-properties': '/my-properties',
+      'scan': '/scan'
+    };
+
+    navigate(routeMap[tab] || '/');
     setShowAuth(false);
   };
 
   const handleAuthSuccess = (userData: User) => {
     setUser(userData);
     setShowAuth(false);
-    setActiveTab('dashboard');
+    navigate('/dashboard');
   };
 
   const handleAddPropertyClick = () => {
@@ -798,7 +812,7 @@ const App: React.FC = () => {
     const isAdding = !favourites.includes(propertyId);
     toggleFavourite(propertyId);
     if (isAdding) {
-      setActiveTab('favourites');
+      navigate('/saved');
     }
   };
 
@@ -829,14 +843,17 @@ const App: React.FC = () => {
         setScannedOwnerId(ownerId);
         setLastScannedQr(ownerId);
         setQrStatus('valid');
+        navigate(`/properties/qrcode/${ownerId}`);
       } else {
         // Try as serial in users
         const q = query(collection(db, "users"), where("qrCode", "==", ownerId.toUpperCase()));
         const querySnapshot = await getDocs(q);
         if (!querySnapshot.empty) {
-          setScannedOwnerId(querySnapshot.docs[0].id);
+          const foundOwnerId = querySnapshot.docs[0].id;
+          setScannedOwnerId(foundOwnerId);
           setLastScannedQr(ownerId.toUpperCase());
           setQrStatus('valid');
+          navigate(`/properties/qrcode/${foundOwnerId}`);
         } else {
           // Check if it's a valid generated QR but not linked
           const qGen = query(collection(db, "properties"), where("code", "==", ownerId.toUpperCase()));
@@ -845,16 +862,18 @@ const App: React.FC = () => {
           if (systemQR) {
             setScannedOwnerId(ownerId.toUpperCase());
             setQrStatus('unlinked');
+            navigate(`/properties/qrcode/${ownerId.toUpperCase()}`);
           } else {
             setScannedOwnerId(ownerId);
             setQrStatus('invalid');
+            navigate(`/properties/qrcode/${ownerId}`);
           }
           setLastScannedQr(ownerId);
         }
       }
       setIsQrInvalid(false);
       setIsScanning(false);
-      setActiveTab('my-properties');
+      navigate('/my-properties');
       setIsNearbyActive(false);
       setSearchQuery(''); 
     } else if (serial) {
@@ -880,14 +899,14 @@ const App: React.FC = () => {
       setLastScannedQr(serial);
       setIsQrInvalid(false);
       setIsScanning(false);
-      setActiveTab('my-properties');
+      navigate('/my-properties');
       setIsNearbyActive(false);
     }
   };
 
   const closeScanner = () => {
     setIsScanning(false);
-    setActiveTab('home');
+    navigate('/');
   };
 
   // Aggregated Stats for Dashboard
@@ -908,6 +927,486 @@ const App: React.FC = () => {
     "100% Free – No hidden charges"
   ];
 
+  const HomeView = () => (
+    <motion.div key="home" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} className="space-y-8 md:space-y-12">
+      {!scannedOwnerId ? (
+        <div className="text-center max-w-3xl mx-auto space-y-4 md:space-y-6 py-6 md:py-10 px-4">
+          <h1 className="text-3xl sm:text-4xl md:text-6xl font-extrabold tracking-tight">
+            Find Your Perfect <span className="text-indigo-500">Living Space</span>
+          </h1>
+          <p className="text-slate-400 text-base md:text-lg">Premium property listings with instant QR discovery and AI-powered insights.</p>
+          
+          <div className="bg-slate-900 p-4 md:p-6 rounded-3xl border border-slate-800 shadow-2xl space-y-4">
+            <div className="flex flex-col sm:flex-row justify-between items-center gap-4 border-b border-slate-800 pb-4">
+              <div className="inline-flex bg-slate-800 p-1 rounded-xl w-full sm:w-auto">
+                <button onClick={() => setSearchType('rent')} className={`flex-1 sm:flex-none px-6 md:px-8 py-2 md:py-2.5 rounded-lg text-xs md:text-sm font-semibold transition-all ${searchType === 'rent' ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-500/20' : 'text-slate-400 hover:text-white'}`}>Rent</button>
+                <button onClick={() => setSearchType('buy')} className={`flex-1 sm:flex-none px-6 md:px-8 py-2 md:py-2.5 rounded-lg text-xs md:text-sm font-semibold transition-all ${searchType === 'buy' ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-500/20' : 'text-slate-400 hover:text-white'}`}>Buy</button>
+              </div>
+              <div className="flex items-center gap-2 w-full sm:w-auto justify-center">
+                {isNearbyActive && (
+                  <div className="flex items-center gap-2 bg-slate-800 px-2.5 py-1 rounded-xl border border-slate-700">
+                    <span className="text-[9px] font-bold text-slate-500 uppercase">Radius:</span>
+                    <select 
+                      className="bg-transparent text-[10px] font-bold text-indigo-400 focus:ring-0 border-none p-0 cursor-pointer"
+                      value={radiusFilter}
+                      onChange={(e) => setRadiusFilter(Number(e.target.value))}
+                    >
+                      <option value={2}>2 km</option>
+                      <option value={5}>5 km</option>
+                      <option value={10}>10 km</option>
+                      <option value={20}>20 km</option>
+                    </select>
+                    <button onClick={() => setIsNearbyActive(false)} className="text-slate-500 hover:text-red-400 ml-1">
+                      <X className="w-3 h-3" />
+                    </button>
+                  </div>
+                )}
+                <button 
+                  onClick={findNearby}
+                  disabled={isFetchingLocation}
+                  className={`flex items-center gap-2 font-bold text-xs md:text-sm px-3 md:px-4 py-1.5 md:py-2 rounded-xl transition-all ${isNearbyActive ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-500/20' : 'bg-indigo-600/10 text-indigo-400 hover:bg-indigo-600/20'}`}
+                >
+                  {isFetchingLocation ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Navigation className="w-3.5 h-3.5" />}
+                  {isNearbyActive ? 'Refine Near Me' : 'Find Nearby'}
+                </button>
+              </div>
+            </div>
+
+            <div className="flex flex-col md:flex-row gap-3 md:gap-4">
+              <div className="flex-1 relative">
+                <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 md:w-5 h-4 md:h-5 text-slate-500" />
+                <input type="text" placeholder="Location, locality or enter Owner S.No" className="w-full bg-slate-800 border-none rounded-2xl py-3 md:py-4 pl-11 md:pl-12 pr-4 text-xs md:text-sm focus:ring-2 focus:ring-indigo-500" value={searchQuery} onChange={(e) => { setSearchQuery(e.target.value); if(isNearbyActive) setIsNearbyActive(false); if(scannedOwnerId) setScannedOwnerId(null); }} />
+              </div>
+              <div className="flex gap-2">
+                <button onClick={() => setIsScanning(true)} className="flex-1 md:flex-none flex items-center justify-center gap-2 bg-slate-800 hover:bg-slate-700 px-4 md:px-6 py-3 md:py-4 rounded-2xl font-medium transition-colors border border-slate-700">
+                  <QrIcon className="w-4 md:w-5 h-4 md:h-5 text-indigo-500" /><span className="md:hidden text-xs">Scan QR</span>
+                </button>
+                <button className="flex-1 md:flex-none bg-indigo-600 hover:bg-indigo-700 px-6 md:px-10 py-3 md:py-4 rounded-2xl font-semibold text-xs md:text-sm transition-all shadow-lg shadow-indigo-500/20">Search</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : (
+        <div className="py-6 md:py-10 px-4">
+          <div className="max-w-4xl mx-auto">
+            <button 
+              onClick={() => { setScannedOwnerId(null); setLastScannedQr(null); setQrStatus(null); navigate('/'); }}
+              className="flex items-center gap-2 text-slate-500 hover:text-white transition-colors mb-6 group"
+            >
+              <div className="w-8 h-8 bg-slate-900 rounded-full flex items-center justify-center border border-slate-800 group-hover:bg-slate-800 transition-all">
+                <ChevronLeft className="w-4 h-4" />
+              </div>
+              <span className="text-xs font-black uppercase tracking-widest">Back to Search</span>
+            </button>
+
+            {qrOwner && (
+              <div className="bg-slate-900 rounded-[2.5rem] border border-slate-800 p-6 md:p-8 mb-8 relative overflow-hidden">
+                <div className="absolute top-0 right-0 w-64 h-64 bg-indigo-600/5 rounded-full blur-3xl -mr-32 -mt-32"></div>
+                <div className="relative z-10 flex flex-col md:flex-row items-center gap-6 text-center md:text-left">
+                  <img src={qrOwner.avatar} className="w-24 h-24 rounded-3xl border-2 border-indigo-500/20 shadow-xl" alt="" />
+                  <div className="flex-1 space-y-2">
+                    <div className="flex flex-col md:flex-row md:items-center gap-2 md:gap-4">
+                      <h2 className="text-2xl md:text-3xl font-bold tracking-tight">{qrOwner.name}</h2>
+                      <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-indigo-600/10 text-indigo-400 rounded-full text-[10px] font-black uppercase tracking-widest border border-indigo-500/20">
+                        <ShieldCheck className="w-3 h-3" /> Verified Owner
+                      </span>
+                    </div>
+                    <p className="text-slate-400 text-sm max-w-xl">
+                      Viewing all properties posted by this owner. Scan the Smart Board on the property to view details instantly.
+                    </p>
+                    <div className="flex flex-wrap justify-center md:justify-start gap-4 pt-2">
+                      <div className="flex items-center gap-2 text-slate-500">
+                        <Building2 className="w-4 h-4" />
+                        <span className="text-xs font-bold">{filteredProperties.length} Active Listings</span>
+                      </div>
+                      <div className="flex items-center gap-2 text-slate-500">
+                        <QrIcon className="w-4 h-4" />
+                        <span className="text-xs font-bold font-mono uppercase">S.No: {lastScannedQr}</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      <div className="space-y-6 md:space-y-8">
+        <div className="flex items-center justify-between">
+          <div>
+            <h2 className="text-xl md:text-2xl font-bold">
+              {scannedOwnerId && qrOwner ? `Properties by ${qrOwner.name}` : isNearbyActive ? `Properties within ${radiusFilter}km` : 'Recommended for you'}
+            </h2>
+            <p className="text-slate-400 text-xs md:text-sm">
+              {scannedOwnerId && qrOwner ? 'Exclusive property listings for this owner' : isNearbyActive ? 'Sorted by nearest distance' : 'Based on your recent activity'}
+            </p>
+          </div>
+          {(scannedOwnerId || isNearbyActive) ? (
+            <button 
+              onClick={() => { setScannedOwnerId(null); setIsNearbyActive(false); setSearchQuery(''); navigate('/'); }} 
+              className="text-indigo-500 font-bold text-xs md:text-sm hover:underline"
+            >
+              Reset View
+            </button>
+          ) : (
+            <button className="flex items-center gap-1 text-indigo-500 font-semibold hover:text-indigo-400 transition-colors text-xs md:text-sm">View All <ChevronRight className="w-3.5 h-3.5" /></button>
+          )}
+        </div>
+        
+        {scannedOwnerId && qrStatus === 'unlinked' && (
+          <div className="bg-slate-900 border border-slate-800 p-8 md:p-12 rounded-[2.5rem] text-center space-y-6 max-w-lg mx-auto">
+            <div className="w-20 h-20 bg-indigo-500/10 rounded-full flex items-center justify-center mx-auto">
+              <QrIcon className="w-10 h-10 text-indigo-500" />
+            </div>
+            <div className="space-y-2">
+              <h3 className="text-2xl font-bold text-white">Valid Board - Not Linked</h3>
+              <p className="text-slate-400 text-sm leading-relaxed">
+                This Smart Board (S.No: <span className="text-indigo-400 font-mono font-bold">{scannedOwnerId}</span>) is a genuine ToletBro board, but it hasn't been linked to an owner's account yet.
+              </p>
+            </div>
+            <div className="pt-4">
+              <button 
+                onClick={() => { setScannedOwnerId(null); setLastScannedQr(null); setQrStatus(null); navigate('/'); }} 
+                className="w-full bg-slate-800 hover:bg-slate-700 py-4 rounded-2xl text-xs font-black uppercase tracking-widest transition-all"
+              >
+                Back to Search
+              </button>
+            </div>
+          </div>
+        )}
+
+        {scannedOwnerId && qrStatus === 'invalid' && (
+          <div className="bg-slate-900 border border-slate-800 p-8 md:p-12 rounded-[2.5rem] text-center space-y-6 max-w-lg mx-auto">
+            <div className="w-20 h-20 bg-rose-500/10 rounded-full flex items-center justify-center mx-auto">
+              <AlertCircle className="w-10 h-10 text-rose-500" />
+            </div>
+            <div className="space-y-2">
+              <h3 className="text-2xl font-bold text-white">Invalid QR Code</h3>
+              <p className="text-slate-400 text-sm leading-relaxed">
+                The QR code you scanned is not a valid ToletBro Smart Board code. Please try again with a genuine board.
+              </p>
+            </div>
+            <div className="pt-4">
+              <button 
+                onClick={() => { setScannedOwnerId(null); setLastScannedQr(null); setQrStatus(null); navigate('/'); }} 
+                className="w-full bg-slate-800 hover:bg-slate-700 py-4 rounded-2xl text-xs font-black uppercase tracking-widest transition-all"
+              >
+                Back to Search
+              </button>
+            </div>
+          </div>
+        )}
+
+        {scannedOwnerId && qrOwner && filteredProperties.length === 0 && (
+          <div className="bg-slate-900 border border-slate-800 p-8 md:p-12 rounded-[2.5rem] text-center space-y-6 max-w-lg mx-auto">
+            <div className="w-20 h-20 bg-indigo-500/10 rounded-full flex items-center justify-center mx-auto">
+              <Building2 className="w-10 h-10 text-indigo-500" />
+            </div>
+            <div className="space-y-2">
+              <h3 className="text-2xl font-bold text-white">No Properties Posted</h3>
+              <p className="text-slate-400 text-sm leading-relaxed">
+                Owner <span className="text-indigo-400 font-bold">{qrOwner.name}</span> has linked this board, but hasn't posted any active property listings yet.
+              </p>
+            </div>
+            <div className="pt-4">
+              <button 
+                onClick={() => { setScannedOwnerId(null); setLastScannedQr(null); setQrStatus(null); navigate('/'); }} 
+                className="w-full bg-slate-800 hover:bg-slate-700 py-4 rounded-2xl text-xs font-black uppercase tracking-widest transition-all"
+              >
+                Back to Search
+              </button>
+            </div>
+          </div>
+        )}
+
+        {scannedOwnerId && qrOwner && filteredProperties.length > 0 && (
+          <div className="mb-8 flex items-center justify-between bg-indigo-600/10 p-4 rounded-2xl border border-indigo-500/20">
+            <div className="flex items-center gap-3">
+              <div className="bg-indigo-600 p-2 rounded-xl">
+                <QrIcon className="w-4 h-4 text-white" />
+              </div>
+              <div>
+                <p className="text-[10px] font-black uppercase tracking-widest text-indigo-400">Viewing Listings For</p>
+                <p className="text-sm font-bold text-white">{qrOwner.name}'s Smart Board</p>
+              </div>
+            </div>
+            <button 
+              onClick={() => { setScannedOwnerId(null); setLastScannedQr(null); setQrStatus(null); navigate('/'); }}
+              className="text-[10px] font-black uppercase tracking-widest text-slate-500 hover:text-white transition-colors"
+            >
+              Clear Filter
+            </button>
+          </div>
+        )}
+
+        {filteredProperties.length > 0 ? (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 md:gap-8">
+            {filteredProperties.map(property => (
+              <PropertyCard 
+                key={property.id} 
+                property={property} 
+                onClick={(id) => setSelectedPropertyId(id)}
+                isFavourite={favourites.includes(property.id)}
+                onToggleFavourite={handleToggleFavourite}
+                isOwner={user?.id === property.ownerId}
+                onEdit={handleEditProperty}
+                onDelete={handleDeleteProperty}
+              />
+            ))}
+          </div>
+        ) : (
+          <div className="text-center py-20 bg-slate-900 rounded-3xl border border-slate-800">
+            <div className="bg-slate-800 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4">
+              <MapIcon className="w-8 h-8 text-slate-500" />
+            </div>
+            <h3 className="text-xl font-bold mb-2">
+              {isNearbyActive ? 'No nearby properties found' : 'No properties found'}
+            </h3>
+            <p className="text-slate-400 max-w-sm mx-auto">
+              {isNearbyActive ? `Try increasing the search radius beyond ${radiusFilter}km or try a different city.` : 'Try adjusting your filters or search for a different owner QR.'}
+            </p>
+            {isNearbyActive && (
+              <button onClick={() => setRadiusFilter(prev => prev + 10)} className="mt-6 text-indigo-400 font-bold text-sm underline">Expand Radius to {radiusFilter + 10}km</button>
+            )}
+          </div>
+        )}
+      </div>
+
+      <div className="py-12 md:py-20 border-t border-slate-900">
+        <div className="text-center mb-10 md:mb-16 space-y-3 md:space-y-4">
+          <h2 className="text-2xl md:text-3xl font-bold italic">What our users say</h2>
+          <div className="flex justify-center gap-1">{[...Array(5)].map((_, i) => <Star key={i} className="w-4 md:w-5 h-4 md:h-5 text-yellow-500 fill-yellow-500" />)}</div>
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 md:gap-8">{MOCK_TESTIMONIALS.map(t => (
+          <div key={t.id} className="bg-slate-900 p-6 md:p-8 rounded-3xl border border-slate-800 relative">
+            <p className="text-slate-300 italic mb-6 md:mb-8 relative z-10 text-sm md:text-base leading-relaxed">"{t.content}"</p>
+            <div className="flex items-center gap-3 md:gap-4"><img src={t.avatar} className="w-10 md:w-12 h-10 md:h-12 rounded-full border border-slate-700" alt="" /><div><h4 className="font-bold text-sm md:text-base">{t.name}</h4><span className="text-slate-500 text-[10px] md:text-xs">{t.role}</span></div></div>
+          </div>
+        ))}</div>
+      </div>
+    </motion.div>
+  );
+
+  const FavouritesView = () => (
+    <motion.div key="favourites" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-6 md:space-y-8">
+      <div><h1 className="text-2xl md:text-3xl font-bold">My Favourites</h1><p className="text-slate-400 text-xs md:text-sm">Properties you've saved for later</p></div>
+      {filteredProperties.length > 0 ? (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 md:gap-8">
+          {filteredProperties.map(property => (
+            <PropertyCard 
+              key={property.id} 
+              property={property} 
+              onClick={(id) => setSelectedPropertyId(id)}
+              isFavourite={favourites.includes(property.id)}
+              onToggleFavourite={handleToggleFavourite}
+              isOwner={user?.id === property.ownerId}
+              onEdit={handleEditProperty}
+              onDelete={handleDeleteProperty}
+            />
+          ))}
+        </div>
+      ) : (
+        <div className="bg-slate-900/50 rounded-[3rem] border-2 border-dashed border-slate-800 p-20 text-center">
+          <Heart className="w-12 h-12 text-slate-700 mx-auto mb-4" />
+          <h3 className="text-xl font-bold text-slate-400">No saved properties yet</h3>
+          <p className="text-sm text-slate-500 mt-2">Start exploring and save properties you like!</p>
+          <button onClick={() => navigate('/')} className="mt-6 bg-indigo-600 px-8 py-3 rounded-xl font-bold text-xs uppercase tracking-widest">Explore Properties</button>
+        </div>
+      )}
+    </motion.div>
+  );
+
+  const DashboardView = () => (
+    <motion.div key="dashboard-tab" initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }} className="space-y-6 md:space-y-8">
+      {isOwner ? (
+        <div className="space-y-6 md:space-y-8">
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div><h1 className="text-2xl md:text-3xl font-bold">My Dashboard</h1><p className="text-slate-400 text-xs md:text-sm">Manage your property listings and monitor performance</p></div>
+            <button onClick={handleAddPropertyClick} className="flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-700 px-6 py-2.5 md:py-3 rounded-xl font-semibold text-sm transition-all shadow-lg shadow-indigo-500/20">
+              <Plus className="w-4 md:w-5 h-4 md:h-5" /> Add New Property
+            </button>
+          </div>
+
+          {!user.qrCode && (
+            <motion.div 
+              initial={{ opacity: 0, y: -20 }} 
+              animate={{ opacity: 1, y: 0 }}
+              onClick={() => navigate('/profile')}
+              className="bg-gradient-to-br from-indigo-900/40 via-indigo-800/20 to-slate-900 p-5 md:p-6 rounded-[2rem] md:rounded-[2.5rem] border border-indigo-500/30 shadow-2xl relative overflow-hidden group cursor-pointer"
+            >
+              <div className="absolute top-0 right-0 w-64 h-64 bg-indigo-600/10 rounded-full blur-[80px] -mr-32 -mt-32"></div>
+              <div className="relative z-10 flex flex-col md:flex-row items-start justify-between gap-6">
+                <div className="flex-1 space-y-3 md:space-y-4">
+                  <div className="flex items-center gap-3">
+                    <div className="bg-indigo-600 p-2 rounded-xl shadow-lg shadow-indigo-600/20">
+                      <Sparkles className="w-4 md:w-5 h-4 md:h-5 text-white" />
+                    </div>
+                    <h2 className="text-lg md:text-xl font-bold text-white tracking-tight">Upgrade to Smart Tolet Board</h2>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1.5 md:gap-y-2">
+                    {smartBoardAdvantages.map((adv, i) => (
+                      <div key={i} className="flex items-center gap-2 text-[10px] md:text-[11px] text-slate-300">
+                        <CheckCircle2 className="w-3 md:w-3.5 h-3 md:h-3.5 text-indigo-400 flex-shrink-0" />
+                        <span className="leading-tight">{adv}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+                <div className="flex flex-col items-center gap-2 md:gap-3 bg-slate-900/40 p-4 md:p-5 rounded-[1.5rem] md:rounded-[2rem] border border-indigo-500/10 group-hover:bg-indigo-600/10 transition-all min-w-[120px] md:min-w-[140px]">
+                  <div className="bg-white p-2 md:p-2.5 rounded-xl shadow-xl shadow-indigo-500/10 opacity-70 group-hover:opacity-100 transition-opacity">
+                    <QrIcon className="w-8 md:w-10 h-8 md:h-10 text-slate-900" />
+                  </div>
+                  <span className="text-[9px] md:text-[10px] font-bold text-indigo-400 group-hover:text-indigo-300 text-center uppercase tracking-wider">Setup Now <ChevronRight className="inline w-3 h-3 ml-0.5" /></span>
+                </div>
+              </div>
+            </motion.div>
+          )}
+
+          <div className="grid grid-cols-3 md:grid-cols-3 gap-2 md:gap-6">
+            <div className="bg-slate-900 p-3 md:p-6 rounded-2xl md:rounded-3xl border border-slate-800 flex flex-col items-center justify-center text-center">
+              <div className="flex items-center gap-2 mb-1 md:mb-4">
+                <BarChart3 className="w-3 md:w-5 h-3 md:h-5 text-indigo-500" />
+                <h3 className="text-slate-400 text-[8px] md:text-sm font-medium uppercase tracking-tighter md:tracking-normal">Active</h3>
+              </div>
+              <span className="text-lg md:text-3xl font-bold">{activeOwnerProperties.length}</span>
+            </div>
+            <div className="bg-slate-900 p-3 md:p-6 rounded-2xl md:rounded-3xl border border-slate-800 flex flex-col items-center justify-center text-center">
+              <div className="flex items-center gap-2 mb-1 md:mb-4">
+                <QrIcon className="w-3 md:w-5 h-3 md:h-5 text-green-500" />
+                <h3 className="text-slate-400 text-[8px] md:text-sm font-medium uppercase tracking-tighter md:tracking-normal">Scans</h3>
+              </div>
+              <span className="text-lg md:text-3xl font-bold">{totalScans}</span>
+            </div>
+            <div className="bg-slate-900 p-3 md:p-6 rounded-2xl md:rounded-3xl border border-slate-800 flex flex-col items-center justify-center text-center">
+              <div className="flex items-center gap-2 mb-1 md:mb-4">
+                <Globe className="w-3 md:w-5 h-3 md:h-5 text-blue-500" />
+                <h3 className="text-slate-400 text-[8px] md:text-sm font-medium uppercase tracking-tighter md:tracking-normal">Views</h3>
+              </div>
+              <span className="text-lg md:text-3xl font-bold">{totalViews}</span>
+            </div>
+          </div>
+
+          <div className="flex gap-4 border-b border-slate-800 mb-6">
+            <button 
+              onClick={() => setDashboardSubTab('active')}
+              className={`pb-4 px-2 text-sm font-bold transition-all relative ${dashboardSubTab === 'active' ? 'text-indigo-400' : 'text-slate-500 hover:text-slate-300'}`}
+            >
+              Active Listings ({activeOwnerProperties.length})
+              {dashboardSubTab === 'active' && <motion.div layoutId="dash-subtab" className="absolute bottom-0 left-0 right-0 h-0.5 bg-indigo-400" />}
+            </button>
+            <button 
+              onClick={() => setDashboardSubTab('past')}
+              className={`pb-4 px-2 text-sm font-bold transition-all relative ${dashboardSubTab === 'past' ? 'text-indigo-400' : 'text-slate-500 hover:text-slate-300'}`}
+            >
+              Past Properties ({pastOwnerProperties.length})
+              {dashboardSubTab === 'past' && <motion.div layoutId="dash-subtab" className="absolute bottom-0 left-0 right-0 h-0.5 bg-indigo-400" />}
+            </button>
+          </div>
+
+          <div className="bg-slate-900 rounded-3xl border border-slate-800 overflow-hidden">
+            <div className="p-6 border-b border-slate-800 flex items-center justify-between">
+              <h2 className="font-bold">{dashboardSubTab === 'active' ? 'Active Listings' : 'Past Properties'} Analytics</h2>
+              <p className="text-indigo-400 text-sm font-bold">Owner QR: {user.qrCode || 'Not Set'}</p>
+            </div>
+            <div className="divide-y divide-slate-800">
+              {(dashboardSubTab === 'active' ? activeOwnerProperties : pastOwnerProperties).map(p => (
+                <div key={p.id} className="p-8 flex flex-col lg:flex-row gap-8 hover:bg-slate-800/20 transition-all group/row">
+                  <div className="flex items-start gap-6 lg:w-1/3">
+                    <img src={p.images[0]} className="w-24 h-24 rounded-2xl object-cover shadow-lg" alt="" />
+                    <div>
+                      <div className="flex items-center justify-between">
+                        <h4 className="font-bold text-lg">{p.title}</h4>
+                        <div className="flex gap-2 opacity-0 group-hover/row:opacity-100 transition-opacity">
+                          {dashboardSubTab === 'past' && (
+                            <button onClick={() => handleRepostProperty(p.id)} title="Repost Property" className="p-1.5 bg-green-500/10 text-green-500 rounded-lg hover:bg-green-500 hover:text-white transition-all"><Zap className="w-3.5 h-3.5" /></button>
+                          )}
+                          <button onClick={() => handleEditProperty(p)} className="p-1.5 bg-indigo-600/20 text-indigo-400 rounded-lg hover:bg-indigo-600 hover:text-white transition-all"><Plus className="w-3.5 h-3.5 rotate-45" /></button>
+                          <button onClick={() => handleDeleteProperty(p.id)} className="p-1.5 bg-rose-500/10 text-rose-500 rounded-lg hover:bg-rose-500 hover:text-white transition-all"><X className="w-3.5 h-3.5" /></button>
+                        </div>
+                      </div>
+                      <p className="text-slate-500 text-xs mb-3">{p.locality}, {p.location}</p>
+                      <div className="flex gap-2">
+                        <span className="px-2 py-1 bg-slate-800 rounded text-[10px] font-bold uppercase text-slate-400">{p.type}</span>
+                        <span className="px-2 py-1 bg-indigo-500/10 rounded text-[10px] font-bold uppercase text-indigo-400">₹{p.price}</span>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="flex-1 grid grid-cols-2 sm:grid-cols-5 gap-4">
+                    <div className="bg-slate-950/50 p-3 rounded-2xl border border-slate-800 text-center">
+                      <span className="block text-xl font-bold text-white">{p.analytics?.totalVisitors || 0}</span>
+                      <span className="text-[10px] text-slate-500 uppercase font-bold tracking-tighter">Total Visitors</span>
+                    </div>
+                    <div className="bg-slate-950/50 p-3 rounded-2xl border border-slate-800 text-center">
+                      <span className="block text-xl font-bold text-green-400">{p.analytics?.smartBoardScans || 0}</span>
+                      <span className="text-[10px] text-slate-500 uppercase font-bold tracking-tighter">Board Scans</span>
+                    </div>
+                    <div className="bg-slate-950/50 p-3 rounded-2xl border border-slate-800 text-center">
+                      <span className="block text-xl font-bold text-blue-400">{p.analytics?.onlineSearches || 0}</span>
+                      <span className="text-[10px] text-slate-500 uppercase font-bold tracking-tighter">Online Search</span>
+                    </div>
+                    <div className="bg-slate-950/50 p-3 rounded-2xl border border-slate-800 text-center">
+                      <span className="block text-xl font-bold text-indigo-400">{p.analytics?.callClicks || 0}</span>
+                      <span className="text-[10px] text-slate-500 uppercase font-bold tracking-tighter">Call Attempts</span>
+                    </div>
+                    <div className="bg-slate-950/50 p-3 rounded-2xl border border-slate-800 text-center">
+                      <span className="block text-xl font-bold text-emerald-400">{p.analytics?.whatsappClicks || 0}</span>
+                      <span className="text-[10px] text-slate-500 uppercase font-bold tracking-tighter">WhatsApp Msg</span>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      ) : (
+        <div className="min-h-[60vh] flex flex-col items-center justify-center text-center px-4">
+          <div className="bg-indigo-600/10 p-6 rounded-[3rem] mb-8 border border-indigo-500/20">
+            <Building2 className="w-16 h-16 text-indigo-500" />
+          </div>
+          <h2 className="text-3xl font-black mb-4">Start Your Property Journey</h2>
+          <p className="text-slate-400 max-w-md mx-auto mb-10 leading-relaxed">
+            Have a house to rent or sell? List your property today and get access to our premium Owner Dashboard and Smart Tolet features.
+          </p>
+          <button 
+            onClick={handleAddPropertyClick}
+            className="flex items-center gap-3 bg-indigo-600 hover:bg-indigo-700 px-10 py-5 rounded-2xl font-black transition-all shadow-xl shadow-indigo-600/30 group"
+          >
+            <PlusCircle className="w-6 h-6" />
+            List My Property Now
+            <ChevronRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
+          </button>
+        </div>
+      )}
+    </motion.div>
+  );
+
+  const MyPropertiesWrapper = () => {
+    const { ownerId } = useParams();
+    
+    useEffect(() => {
+      if (ownerId && ownerId !== scannedOwnerId) {
+        setScannedOwnerId(ownerId);
+        setLastScannedQr(ownerId);
+      }
+    }, [ownerId]);
+
+    const displayOwner = ownerId ? qrOwner : user;
+    const isOwnProfile = !!user && (!ownerId || user.id === ownerId);
+
+    return (
+      <MyProperties 
+        owner={displayOwner}
+        properties={properties}
+        isOwnProfile={isOwnProfile}
+        onBack={() => navigate('/')}
+        onSelectProperty={setSelectedPropertyId}
+        onEditProperty={handleEditProperty}
+        onDeleteProperty={handleDeleteProperty}
+      />
+    );
+  };
+
   const AMENITIES_LIST = ["Lift", "Parking", "Security", "Gated Community", "Children's Play Area", "Water Supply"];
   const NEARBY_FACILITIES_LIST = ["School", "Hospital", "Metro", "Bus Stop", "Market"];
 
@@ -919,516 +1418,51 @@ const App: React.FC = () => {
     <Layout 
       user={user} 
       onLogout={handleLogout} 
-      activeTab={activeTab} 
-      setActiveTab={handleTabChange}
       onLoginClick={() => setShowAuth(true)}
       scannedOwnerId={scannedOwnerId}
     >
       <AnimatePresence mode="wait">
-        {activeTab === 'home' && (
-          <motion.div key="home" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} className="space-y-8 md:space-y-12">
-            {!scannedOwnerId ? (
-              <div className="text-center max-w-3xl mx-auto space-y-4 md:space-y-6 py-6 md:py-10 px-4">
-                <h1 className="text-3xl sm:text-4xl md:text-6xl font-extrabold tracking-tight">
-                  Find Your Perfect <span className="text-indigo-500">Living Space</span>
-                </h1>
-                <p className="text-slate-400 text-base md:text-lg">Premium property listings with instant QR discovery and AI-powered insights.</p>
-                
-                <div className="bg-slate-900 p-4 md:p-6 rounded-3xl border border-slate-800 shadow-2xl space-y-4">
-                  <div className="flex flex-col sm:flex-row justify-between items-center gap-4 border-b border-slate-800 pb-4">
-                    <div className="inline-flex bg-slate-800 p-1 rounded-xl w-full sm:w-auto">
-                      <button onClick={() => setSearchType('rent')} className={`flex-1 sm:flex-none px-6 md:px-8 py-2 md:py-2.5 rounded-lg text-xs md:text-sm font-semibold transition-all ${searchType === 'rent' ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-500/20' : 'text-slate-400 hover:text-white'}`}>Rent</button>
-                      <button onClick={() => setSearchType('buy')} className={`flex-1 sm:flex-none px-6 md:px-8 py-2 md:py-2.5 rounded-lg text-xs md:text-sm font-semibold transition-all ${searchType === 'buy' ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-500/20' : 'text-slate-400 hover:text-white'}`}>Buy</button>
-                    </div>
-                    <div className="flex items-center gap-2 w-full sm:w-auto justify-center">
-                      {isNearbyActive && (
-                        <div className="flex items-center gap-2 bg-slate-800 px-2.5 py-1 rounded-xl border border-slate-700">
-                          <span className="text-[9px] font-bold text-slate-500 uppercase">Radius:</span>
-                          <select 
-                            className="bg-transparent text-[10px] font-bold text-indigo-400 focus:ring-0 border-none p-0 cursor-pointer"
-                            value={radiusFilter}
-                            onChange={(e) => setRadiusFilter(Number(e.target.value))}
-                          >
-                            <option value={2}>2 km</option>
-                            <option value={5}>5 km</option>
-                            <option value={10}>10 km</option>
-                            <option value={20}>20 km</option>
-                          </select>
-                          <button onClick={() => setIsNearbyActive(false)} className="text-slate-500 hover:text-red-400 ml-1">
-                            <X className="w-3 h-3" />
-                          </button>
-                        </div>
-                      )}
-                      <button 
-                        onClick={findNearby}
-                        disabled={isFetchingLocation}
-                        className={`flex items-center gap-2 font-bold text-xs md:text-sm px-3 md:px-4 py-1.5 md:py-2 rounded-xl transition-all ${isNearbyActive ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-500/20' : 'bg-indigo-600/10 text-indigo-400 hover:bg-indigo-600/20'}`}
-                      >
-                        {isFetchingLocation ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Navigation className="w-3.5 h-3.5" />}
-                        {isNearbyActive ? 'Refine Near Me' : 'Find Nearby'}
-                      </button>
-                    </div>
-                  </div>
-
-                  <div className="flex flex-col md:flex-row gap-3 md:gap-4">
-                    <div className="flex-1 relative">
-                      <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 md:w-5 h-4 md:h-5 text-slate-500" />
-                      <input type="text" placeholder="Location, locality or enter Owner S.No" className="w-full bg-slate-800 border-none rounded-2xl py-3 md:py-4 pl-11 md:pl-12 pr-4 text-xs md:text-sm focus:ring-2 focus:ring-indigo-500" value={searchQuery} onChange={(e) => { setSearchQuery(e.target.value); if(isNearbyActive) setIsNearbyActive(false); if(scannedOwnerId) setScannedOwnerId(null); }} />
-                    </div>
-                    <div className="flex gap-2">
-                      <button onClick={() => setIsScanning(true)} className="flex-1 md:flex-none flex items-center justify-center gap-2 bg-slate-800 hover:bg-slate-700 px-4 md:px-6 py-3 md:py-4 rounded-2xl font-medium transition-colors border border-slate-700">
-                        <QrIcon className="w-4 md:w-5 h-4 md:h-5 text-indigo-500" /><span className="md:hidden text-xs">Scan QR</span>
-                      </button>
-                      <button className="flex-1 md:flex-none bg-indigo-600 hover:bg-indigo-700 px-6 md:px-10 py-3 md:py-4 rounded-2xl font-semibold text-xs md:text-sm transition-all shadow-lg shadow-indigo-500/20">Search</button>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            ) : (
-              <div className="py-6 md:py-10 px-4">
-                <div className="max-w-4xl mx-auto">
-                  <button 
-                    onClick={() => { setScannedOwnerId(null); setLastScannedQr(null); setQrStatus(null); }}
-                    className="flex items-center gap-2 text-slate-500 hover:text-white transition-colors mb-6 group"
-                  >
-                    <div className="w-8 h-8 bg-slate-900 rounded-full flex items-center justify-center border border-slate-800 group-hover:bg-slate-800 transition-all">
-                      <ChevronLeft className="w-4 h-4" />
-                    </div>
-                    <span className="text-xs font-black uppercase tracking-widest">Back to Search</span>
-                  </button>
-
-                  {qrOwner && (
-                    <div className="bg-slate-900 rounded-[2.5rem] border border-slate-800 p-6 md:p-8 mb-8 relative overflow-hidden">
-                      <div className="absolute top-0 right-0 w-64 h-64 bg-indigo-600/5 rounded-full blur-3xl -mr-32 -mt-32"></div>
-                      <div className="relative z-10 flex flex-col md:flex-row items-center gap-6 text-center md:text-left">
-                        <img src={qrOwner.avatar} className="w-24 h-24 rounded-3xl border-2 border-indigo-500/20 shadow-xl" alt="" />
-                        <div className="flex-1 space-y-2">
-                          <div className="flex flex-col md:flex-row md:items-center gap-2 md:gap-4">
-                            <h2 className="text-2xl md:text-3xl font-bold tracking-tight">{qrOwner.name}</h2>
-                            <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-indigo-600/10 text-indigo-400 rounded-full text-[10px] font-black uppercase tracking-widest border border-indigo-500/20">
-                              <ShieldCheck className="w-3 h-3" /> Verified Owner
-                            </span>
-                          </div>
-                          <p className="text-slate-400 text-sm max-w-xl">
-                            Viewing all properties posted by this owner. Scan the Smart Board on the property to view details instantly.
-                          </p>
-                          <div className="flex flex-wrap justify-center md:justify-start gap-4 pt-2">
-                            <div className="flex items-center gap-2 text-slate-500">
-                              <Building2 className="w-4 h-4" />
-                              <span className="text-xs font-bold">{filteredProperties.length} Active Listings</span>
-                            </div>
-                            <div className="flex items-center gap-2 text-slate-500">
-                              <QrIcon className="w-4 h-4" />
-                              <span className="text-xs font-bold font-mono uppercase">S.No: {lastScannedQr}</span>
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              </div>
-            )}
-
-            <div className="space-y-6 md:space-y-8">
-              <div className="flex items-center justify-between">
-                <div>
-                  <h2 className="text-xl md:text-2xl font-bold">
-                    {scannedOwnerId && qrOwner ? `Properties by ${qrOwner.name}` : isNearbyActive ? `Properties within ${radiusFilter}km` : 'Recommended for you'}
-                  </h2>
-                  <p className="text-slate-400 text-xs md:text-sm">
-                    {scannedOwnerId && qrOwner ? 'Exclusive property listings for this owner' : isNearbyActive ? 'Sorted by nearest distance' : 'Based on your recent activity'}
-                  </p>
-                </div>
-                {(scannedOwnerId || isNearbyActive) ? (
-                  <button 
-                    onClick={() => { setScannedOwnerId(null); setIsNearbyActive(false); setSearchQuery(''); }} 
-                    className="text-indigo-500 font-bold text-xs md:text-sm hover:underline"
-                  >
-                    Reset View
-                  </button>
-                ) : (
-                  <button className="flex items-center gap-1 text-indigo-500 font-semibold hover:text-indigo-400 transition-colors text-xs md:text-sm">View All <ChevronRight className="w-3.5 h-3.5" /></button>
-                )}
-              </div>
-              
-                  {scannedOwnerId && qrStatus === 'unlinked' && (
-                    <div className="bg-slate-900 border border-slate-800 p-8 md:p-12 rounded-[2.5rem] text-center space-y-6 max-w-lg mx-auto">
-                      <div className="w-20 h-20 bg-indigo-500/10 rounded-full flex items-center justify-center mx-auto">
-                        <QrIcon className="w-10 h-10 text-indigo-500" />
-                      </div>
-                      <div className="space-y-2">
-                        <h3 className="text-2xl font-bold text-white">Valid Board - Not Linked</h3>
-                        <p className="text-slate-400 text-sm leading-relaxed">
-                          This Smart Board (S.No: <span className="text-indigo-400 font-mono font-bold">{scannedOwnerId}</span>) is a genuine ToletBro board, but it hasn't been linked to an owner's account yet.
-                        </p>
-                      </div>
-                      <div className="pt-4">
-                        <button 
-                          onClick={() => { setScannedOwnerId(null); setLastScannedQr(null); setQrStatus(null); }} 
-                          className="w-full bg-slate-800 hover:bg-slate-700 py-4 rounded-2xl text-xs font-black uppercase tracking-widest transition-all"
-                        >
-                          Back to Search
-                        </button>
-                      </div>
-                    </div>
-                  )}
-
-                  {scannedOwnerId && qrStatus === 'invalid' && (
-                    <div className="bg-slate-900 border border-slate-800 p-8 md:p-12 rounded-[2.5rem] text-center space-y-6 max-w-lg mx-auto">
-                      <div className="w-20 h-20 bg-rose-500/10 rounded-full flex items-center justify-center mx-auto">
-                        <AlertCircle className="w-10 h-10 text-rose-500" />
-                      </div>
-                      <div className="space-y-2">
-                        <h3 className="text-2xl font-bold text-white">Invalid QR Code</h3>
-                        <p className="text-slate-400 text-sm leading-relaxed">
-                          The QR code you scanned is not a valid ToletBro Smart Board code. Please try again with a genuine board.
-                        </p>
-                      </div>
-                      <div className="pt-4">
-                        <button 
-                          onClick={() => { setScannedOwnerId(null); setLastScannedQr(null); setQrStatus(null); }} 
-                          className="w-full bg-slate-800 hover:bg-slate-700 py-4 rounded-2xl text-xs font-black uppercase tracking-widest transition-all"
-                        >
-                          Back to Search
-                        </button>
-                      </div>
-                    </div>
-                  )}
-
-                  {scannedOwnerId && qrOwner && filteredProperties.length === 0 && (
-                    <div className="bg-slate-900 border border-slate-800 p-8 md:p-12 rounded-[2.5rem] text-center space-y-6 max-w-lg mx-auto">
-                      <div className="w-20 h-20 bg-indigo-500/10 rounded-full flex items-center justify-center mx-auto">
-                        <Building2 className="w-10 h-10 text-indigo-500" />
-                      </div>
-                      <div className="space-y-2">
-                        <h3 className="text-2xl font-bold text-white">No Properties Posted</h3>
-                        <p className="text-slate-400 text-sm leading-relaxed">
-                          Owner <span className="text-indigo-400 font-bold">{qrOwner.name}</span> has linked this board, but hasn't posted any active property listings yet.
-                        </p>
-                      </div>
-                      <div className="pt-4">
-                        <button 
-                          onClick={() => { setScannedOwnerId(null); setLastScannedQr(null); setQrStatus(null); }} 
-                          className="w-full bg-slate-800 hover:bg-slate-700 py-4 rounded-2xl text-xs font-black uppercase tracking-widest transition-all"
-                        >
-                          Back to Search
-                        </button>
-                      </div>
-                    </div>
-                  )}
-
-                  {scannedOwnerId && qrOwner && filteredProperties.length > 0 && (
-                    <div className="mb-8 flex items-center justify-between bg-indigo-600/10 p-4 rounded-2xl border border-indigo-500/20">
-                      <div className="flex items-center gap-3">
-                        <div className="bg-indigo-600 p-2 rounded-xl">
-                          <QrIcon className="w-4 h-4 text-white" />
-                        </div>
-                        <div>
-                          <p className="text-[10px] font-black uppercase tracking-widest text-indigo-400">Viewing Listings For</p>
-                          <p className="text-sm font-bold text-white">{qrOwner.name}'s Smart Board</p>
-                        </div>
-                      </div>
-                      <button 
-                        onClick={() => { setScannedOwnerId(null); setLastScannedQr(null); setQrStatus(null); }}
-                        className="text-[10px] font-black uppercase tracking-widest text-slate-500 hover:text-white transition-colors"
-                      >
-                        Clear Filter
-                      </button>
-                    </div>
-                  )}
-
-                  {filteredProperties.length > 0 ? (
-                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 md:gap-8">
-                      {filteredProperties.map(property => (
-                        <PropertyCard 
-                          key={property.id} 
-                          property={property} 
-                          onClick={(id) => setSelectedPropertyId(id)}
-                          isFavourite={favourites.includes(property.id)}
-                          onToggleFavourite={handleToggleFavourite}
-                          isOwner={user?.id === property.ownerId}
-                          onEdit={handleEditProperty}
-                          onDelete={handleDeleteProperty}
-                        />
-                      ))}
-                    </div>
-                  ) : (
-                <div className="text-center py-20 bg-slate-900 rounded-3xl border border-slate-800">
-                  <div className="bg-slate-800 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4">
-                    <MapIcon className="w-8 h-8 text-slate-500" />
-                  </div>
-                  <h3 className="text-xl font-bold mb-2">
-                    {isNearbyActive ? 'No nearby properties found' : 'No properties found'}
-                  </h3>
-                  <p className="text-slate-400 max-w-sm mx-auto">
-                    {isNearbyActive ? `Try increasing the search radius beyond ${radiusFilter}km or try a different city.` : 'Try adjusting your filters or search for a different owner QR.'}
-                  </p>
-                  {isNearbyActive && (
-                    <button onClick={() => setRadiusFilter(prev => prev + 10)} className="mt-6 text-indigo-400 font-bold text-sm underline">Expand Radius to {radiusFilter + 10}km</button>
-                  )}
-                </div>
-              )}
-            </div>
-
-            <div className="py-12 md:py-20 border-t border-slate-900">
-              <div className="text-center mb-10 md:mb-16 space-y-3 md:space-y-4">
-                <h2 className="text-2xl md:text-3xl font-bold italic">What our users say</h2>
-                <div className="flex justify-center gap-1">{[...Array(5)].map((_, i) => <Star key={i} className="w-4 md:w-5 h-4 md:h-5 text-yellow-500 fill-yellow-500" />)}</div>
-              </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 md:gap-8">{MOCK_TESTIMONIALS.map(t => (
-                <div key={t.id} className="bg-slate-900 p-6 md:p-8 rounded-3xl border border-slate-800 relative">
-                  <p className="text-slate-300 italic mb-6 md:mb-8 relative z-10 text-sm md:text-base leading-relaxed">"{t.content}"</p>
-                  <div className="flex items-center gap-3 md:gap-4"><img src={t.avatar} className="w-10 md:w-12 h-10 md:h-12 rounded-full border border-slate-700" alt="" /><div><h4 className="font-bold text-sm md:text-base">{t.name}</h4><span className="text-slate-500 text-[10px] md:text-xs">{t.role}</span></div></div>
-                </div>
-              ))}</div>
-            </div>
-          </motion.div>
-        )}
-
-        {activeTab === 'favourites' && (
-           <motion.div key="favourites" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-6 md:space-y-8">
-              <div><h1 className="text-2xl md:text-3xl font-bold">My Favourites</h1><p className="text-slate-400 text-xs md:text-sm">Properties you've saved for later</p></div>
-              {filteredProperties.length > 0 ? (
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 md:gap-8">
-                   {filteredProperties.map(property => (
-                     <PropertyCard 
-                       key={property.id} 
-                       property={property} 
-                       onClick={(id) => setSelectedPropertyId(id)}
-                       isFavourite={favourites.includes(property.id)}
-                       onToggleFavourite={handleToggleFavourite}
-                       isOwner={user?.id === property.ownerId}
-                       onEdit={handleEditProperty}
-                       onDelete={handleDeleteProperty}
-                     />
-                   ))}
+        <Routes location={location}>
+          <Route path="/" element={<HomeView />} />
+          <Route path="/marketplace" element={<HomeView />} />
+          <Route path="/saved" element={<FavouritesView />} />
+          <Route path="/dashboard" element={<DashboardView />} />
+          <Route path="/profile" element={
+            <ProfileSettings 
+              user={user} 
+              onUpdate={handleUpdateProfile} 
+              onLogout={handleLogout}
+              properties={allOwnerProperties}
+              onEditProperty={handleEditProperty}
+              onDeleteProperty={handleDeleteProperty}
+              onRepostProperty={handleRepostProperty}
+              setActiveTab={handleNavigate}
+            />
+          } />
+          <Route path="/admin" element={<AdminConsole />} />
+          <Route path="/my-properties" element={<MyPropertiesWrapper />} />
+          <Route path="/properties/qrcode/:ownerId" element={<MyPropertiesWrapper />} />
+          <Route path="/scan" element={
+            <div className="min-h-[60vh] flex items-center justify-center">
+              {isOwner ? (
+                <div className="w-full max-w-4xl">
+                  <ProfileSettings 
+                    user={user} 
+                    onUpdate={handleUpdateProfile} 
+                    onLogout={handleLogout}
+                    properties={allOwnerProperties}
+                    onEditProperty={handleEditProperty}
+                    onDeleteProperty={handleDeleteProperty}
+                    onRepostProperty={handleRepostProperty}
+                    setActiveTab={handleNavigate}
+                  />
                 </div>
               ) : (
-                <div className="bg-slate-900/50 rounded-[3rem] border-2 border-dashed border-slate-800 p-20 text-center">
-                  <Heart className="w-12 h-12 text-slate-700 mx-auto mb-4" />
-                  <h3 className="text-xl font-bold text-slate-400">No saved properties yet</h3>
-                  <p className="text-sm text-slate-500 mt-2">Start exploring and save properties you like!</p>
-                  <button onClick={() => handleTabChange('home')} className="mt-6 bg-indigo-600 px-8 py-3 rounded-xl font-bold text-xs uppercase tracking-widest">Explore Properties</button>
-                </div>
+                <QRScanner onScan={handleScan} onClose={closeScanner} />
               )}
-           </motion.div>
-        )}
-
-        {activeTab === 'dashboard' && (
-          <motion.div key="dashboard-tab" initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }} className="space-y-6 md:space-y-8">
-            {isOwner ? (
-              <div className="space-y-6 md:space-y-8">
-                <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-                  <div><h1 className="text-2xl md:text-3xl font-bold">My Dashboard</h1><p className="text-slate-400 text-xs md:text-sm">Manage your property listings and monitor performance</p></div>
-                  <button onClick={handleAddPropertyClick} className="flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-700 px-6 py-2.5 md:py-3 rounded-xl font-semibold text-sm transition-all shadow-lg shadow-indigo-500/20">
-                    <Plus className="w-4 md:w-5 h-4 md:h-5" /> Add New Property
-                  </button>
-                </div>
-
-                {!user.qrCode && (
-                  <motion.div 
-                    initial={{ opacity: 0, y: -20 }} 
-                    animate={{ opacity: 1, y: 0 }}
-                    onClick={() => handleTabChange('settings')}
-                    className="bg-gradient-to-br from-indigo-900/40 via-indigo-800/20 to-slate-900 p-5 md:p-6 rounded-[2rem] md:rounded-[2.5rem] border border-indigo-500/30 shadow-2xl relative overflow-hidden group cursor-pointer"
-                  >
-                    <div className="absolute top-0 right-0 w-64 h-64 bg-indigo-600/10 rounded-full blur-[80px] -mr-32 -mt-32"></div>
-                    <div className="relative z-10 flex flex-col md:flex-row items-start justify-between gap-6">
-                      <div className="flex-1 space-y-3 md:space-y-4">
-                        <div className="flex items-center gap-3">
-                          <div className="bg-indigo-600 p-2 rounded-xl shadow-lg shadow-indigo-600/20">
-                            <Sparkles className="w-4 md:w-5 h-4 md:h-5 text-white" />
-                          </div>
-                          <h2 className="text-lg md:text-xl font-bold text-white tracking-tight">Upgrade to Smart Tolet Board</h2>
-                        </div>
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1.5 md:gap-y-2">
-                          {smartBoardAdvantages.map((adv, i) => (
-                            <div key={i} className="flex items-center gap-2 text-[10px] md:text-[11px] text-slate-300">
-                              <CheckCircle2 className="w-3 md:w-3.5 h-3 md:h-3.5 text-indigo-400 flex-shrink-0" />
-                              <span className="leading-tight">{adv}</span>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                      <div className="flex flex-col items-center gap-2 md:gap-3 bg-slate-900/40 p-4 md:p-5 rounded-[1.5rem] md:rounded-[2rem] border border-indigo-500/10 group-hover:bg-indigo-600/10 transition-all min-w-[120px] md:min-w-[140px]">
-                        <div className="bg-white p-2 md:p-2.5 rounded-xl shadow-xl shadow-indigo-500/10 opacity-70 group-hover:opacity-100 transition-opacity">
-                          <QrIcon className="w-8 md:w-10 h-8 md:h-10 text-slate-900" />
-                        </div>
-                        <span className="text-[9px] md:text-[10px] font-bold text-indigo-400 group-hover:text-indigo-300 text-center uppercase tracking-wider">Setup Now <ChevronRight className="inline w-3 h-3 ml-0.5" /></span>
-                      </div>
-                    </div>
-                  </motion.div>
-                )}
-
-                <div className="grid grid-cols-3 md:grid-cols-3 gap-2 md:gap-6">
-                  <div className="bg-slate-900 p-3 md:p-6 rounded-2xl md:rounded-3xl border border-slate-800 flex flex-col items-center justify-center text-center">
-                    <div className="flex items-center gap-2 mb-1 md:mb-4">
-                      <BarChart3 className="w-3 md:w-5 h-3 md:h-5 text-indigo-500" />
-                      <h3 className="text-slate-400 text-[8px] md:text-sm font-medium uppercase tracking-tighter md:tracking-normal">Active</h3>
-                    </div>
-                    <span className="text-lg md:text-3xl font-bold">{activeOwnerProperties.length}</span>
-                  </div>
-                  <div className="bg-slate-900 p-3 md:p-6 rounded-2xl md:rounded-3xl border border-slate-800 flex flex-col items-center justify-center text-center">
-                    <div className="flex items-center gap-2 mb-1 md:mb-4">
-                      <QrIcon className="w-3 md:w-5 h-3 md:h-5 text-green-500" />
-                      <h3 className="text-slate-400 text-[8px] md:text-sm font-medium uppercase tracking-tighter md:tracking-normal">Scans</h3>
-                    </div>
-                    <span className="text-lg md:text-3xl font-bold">{totalScans}</span>
-                  </div>
-                  <div className="bg-slate-900 p-3 md:p-6 rounded-2xl md:rounded-3xl border border-slate-800 flex flex-col items-center justify-center text-center">
-                    <div className="flex items-center gap-2 mb-1 md:mb-4">
-                      <Globe className="w-3 md:w-5 h-3 md:h-5 text-blue-500" />
-                      <h3 className="text-slate-400 text-[8px] md:text-sm font-medium uppercase tracking-tighter md:tracking-normal">Views</h3>
-                    </div>
-                    <span className="text-lg md:text-3xl font-bold">{totalViews}</span>
-                  </div>
-                </div>
-
-                <div className="flex gap-4 border-b border-slate-800 mb-6">
-                  <button 
-                    onClick={() => setDashboardSubTab('active')}
-                    className={`pb-4 px-2 text-sm font-bold transition-all relative ${dashboardSubTab === 'active' ? 'text-indigo-400' : 'text-slate-500 hover:text-slate-300'}`}
-                  >
-                    Active Listings ({activeOwnerProperties.length})
-                    {dashboardSubTab === 'active' && <motion.div layoutId="dash-subtab" className="absolute bottom-0 left-0 right-0 h-0.5 bg-indigo-400" />}
-                  </button>
-                  <button 
-                    onClick={() => setDashboardSubTab('past')}
-                    className={`pb-4 px-2 text-sm font-bold transition-all relative ${dashboardSubTab === 'past' ? 'text-indigo-400' : 'text-slate-500 hover:text-slate-300'}`}
-                  >
-                    Past Properties ({pastOwnerProperties.length})
-                    {dashboardSubTab === 'past' && <motion.div layoutId="dash-subtab" className="absolute bottom-0 left-0 right-0 h-0.5 bg-indigo-400" />}
-                  </button>
-                </div>
-
-                <div className="bg-slate-900 rounded-3xl border border-slate-800 overflow-hidden">
-                   <div className="p-6 border-b border-slate-800 flex items-center justify-between">
-                     <h2 className="font-bold">{dashboardSubTab === 'active' ? 'Active Listings' : 'Past Properties'} Analytics</h2>
-                     <p className="text-indigo-400 text-sm font-bold">Owner QR: {user.qrCode || 'Not Set'}</p>
-                   </div>
-                   <div className="divide-y divide-slate-800">
-                     {(dashboardSubTab === 'active' ? activeOwnerProperties : pastOwnerProperties).map(p => (
-                       <div key={p.id} className="p-8 flex flex-col lg:flex-row gap-8 hover:bg-slate-800/20 transition-all group/row">
-                         <div className="flex items-start gap-6 lg:w-1/3">
-                           <img src={p.images[0]} className="w-24 h-24 rounded-2xl object-cover shadow-lg" alt="" />
-                           <div>
-                             <div className="flex items-center justify-between">
-                                <h4 className="font-bold text-lg">{p.title}</h4>
-                                <div className="flex gap-2 opacity-0 group-hover/row:opacity-100 transition-opacity">
-                                  {dashboardSubTab === 'past' && (
-                                    <button onClick={() => handleRepostProperty(p.id)} title="Repost Property" className="p-1.5 bg-green-500/10 text-green-500 rounded-lg hover:bg-green-500 hover:text-white transition-all"><Zap className="w-3.5 h-3.5" /></button>
-                                  )}
-                                  <button onClick={() => handleEditProperty(p)} className="p-1.5 bg-indigo-600/20 text-indigo-400 rounded-lg hover:bg-indigo-600 hover:text-white transition-all"><Plus className="w-3.5 h-3.5 rotate-45" /></button>
-                                  <button onClick={() => handleDeleteProperty(p.id)} className="p-1.5 bg-rose-500/10 text-rose-500 rounded-lg hover:bg-rose-500 hover:text-white transition-all"><X className="w-3.5 h-3.5" /></button>
-                                </div>
-                              </div>
-                             <p className="text-slate-500 text-xs mb-3">{p.locality}, {p.location}</p>
-                             <div className="flex gap-2">
-                                <span className="px-2 py-1 bg-slate-800 rounded text-[10px] font-bold uppercase text-slate-400">{p.type}</span>
-                                <span className="px-2 py-1 bg-indigo-500/10 rounded text-[10px] font-bold uppercase text-indigo-400">₹{p.price}</span>
-                             </div>
-                           </div>
-                         </div>
-                         <div className="flex-1 grid grid-cols-2 sm:grid-cols-5 gap-4">
-                            <div className="bg-slate-950/50 p-3 rounded-2xl border border-slate-800 text-center">
-                              <span className="block text-xl font-bold text-white">{p.analytics?.totalVisitors || 0}</span>
-                              <span className="text-[10px] text-slate-500 uppercase font-bold tracking-tighter">Total Visitors</span>
-                            </div>
-                            <div className="bg-slate-950/50 p-3 rounded-2xl border border-slate-800 text-center">
-                              <span className="block text-xl font-bold text-green-400">{p.analytics?.smartBoardScans || 0}</span>
-                              <span className="text-[10px] text-slate-500 uppercase font-bold tracking-tighter">Board Scans</span>
-                            </div>
-                            <div className="bg-slate-950/50 p-3 rounded-2xl border border-slate-800 text-center">
-                              <span className="block text-xl font-bold text-blue-400">{p.analytics?.onlineSearches || 0}</span>
-                              <span className="text-[10px] text-slate-500 uppercase font-bold tracking-tighter">Online Search</span>
-                            </div>
-                            <div className="bg-slate-950/50 p-3 rounded-2xl border border-slate-800 text-center">
-                              <span className="block text-xl font-bold text-indigo-400">{p.analytics?.callClicks || 0}</span>
-                              <span className="text-[10px] text-slate-500 uppercase font-bold tracking-tighter">Call Attempts</span>
-                            </div>
-                            <div className="bg-slate-950/50 p-3 rounded-2xl border border-slate-800 text-center">
-                              <span className="block text-xl font-bold text-emerald-400">{p.analytics?.whatsappClicks || 0}</span>
-                              <span className="text-[10px] text-slate-500 uppercase font-bold tracking-tighter">WhatsApp Msg</span>
-                            </div>
-                         </div>
-                       </div>
-                     ))}
-                   </div>
-                </div>
-              </div>
-            ) : (
-              <div className="min-h-[60vh] flex flex-col items-center justify-center text-center px-4">
-                <div className="bg-indigo-600/10 p-6 rounded-[3rem] mb-8 border border-indigo-500/20">
-                  <Building2 className="w-16 h-16 text-indigo-500" />
-                </div>
-                <h2 className="text-3xl font-black mb-4">Start Your Property Journey</h2>
-                <p className="text-slate-400 max-w-md mx-auto mb-10 leading-relaxed">
-                  Have a house to rent or sell? List your property today and get access to our premium Owner Dashboard and Smart Tolet features.
-                </p>
-                <button 
-                  onClick={handleAddPropertyClick}
-                  className="flex items-center gap-3 bg-indigo-600 hover:bg-indigo-700 px-10 py-5 rounded-2xl font-black transition-all shadow-xl shadow-indigo-600/30 group"
-                >
-                  <PlusCircle className="w-6 h-6" />
-                  List My Property Now
-                  <ChevronRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
-                </button>
-              </div>
-            )}
-          </motion.div>
-        )}
-
-        {activeTab === 'settings' && (
-          <ProfileSettings 
-            user={user} 
-            onUpdate={handleUpdateProfile} 
-            onLogout={handleLogout}
-            properties={allOwnerProperties}
-            onEditProperty={handleEditProperty}
-            onDeleteProperty={handleDeleteProperty}
-            onRepostProperty={handleRepostProperty}
-            setActiveTab={handleTabChange}
-          />
-        )}
-        {activeTab === 'admin' && <AdminConsole />}
-
-        {activeTab === 'my-properties' && (
-          <MyProperties 
-            owner={activeTab === 'my-properties' && scannedOwnerId ? qrOwner : user}
-            properties={properties}
-            isOwnProfile={!!user && (!scannedOwnerId || user.id === scannedOwnerId)}
-            onBack={() => {
-              setScannedOwnerId(null);
-              setLastScannedQr(null);
-              setActiveTab('home');
-            }}
-            onSelectProperty={setSelectedPropertyId}
-            onEditProperty={handleEditProperty}
-            onDeleteProperty={handleDeleteProperty}
-          />
-        )}
-
-        {activeTab === 'scan' && (
-          <div className="min-h-[60vh] flex items-center justify-center">
-            {isOwner ? (
-              <div className="w-full max-w-4xl">
-                <ProfileSettings 
-                  user={user} 
-                  onUpdate={handleUpdateProfile} 
-                  onLogout={handleLogout}
-                  properties={allOwnerProperties}
-                  onEditProperty={handleEditProperty}
-                  onDeleteProperty={handleDeleteProperty}
-                  onRepostProperty={handleRepostProperty}
-                  setActiveTab={handleTabChange}
-                />
-              </div>
-            ) : (
-              <QRScanner onScan={handleScan} onClose={closeScanner} />
-            )}
-          </div>
-        )}
+            </div>
+          } />
+        </Routes>
       </AnimatePresence>
 
       <AnimatePresence>
