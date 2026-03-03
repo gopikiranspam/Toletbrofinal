@@ -87,18 +87,41 @@ export const QRScanner: React.FC<QRScannerProps> = ({ onScan, onClose }) => {
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (!file || !html5QrCodeRef.current) return;
+    if (!file) return;
+
+    // Validate file type
+    const validTypes = ['image/png', 'image/jpeg', 'image/jpg', 'image/webp'];
+    if (!validTypes.includes(file.type)) {
+      alert("Unsupported file format. Please upload a PNG or JPG image.");
+      return;
+    }
 
     try {
       setIsInitializing(true);
+      
+      // Stop camera if running to avoid conflicts
+      await stopScanner();
+      
+      // Ensure we have a scanner instance even if camera failed
+      if (!html5QrCodeRef.current) {
+        html5QrCodeRef.current = new Html5Qrcode("reader");
+      }
+
+      // Scan the file
       const decodedText = await html5QrCodeRef.current.scanFile(file, true);
-      onScan(decodedText);
-      stopScanner();
+      
+      if (decodedText) {
+        onScan(decodedText);
+      } else {
+        throw new Error("No QR code detected");
+      }
     } catch (err) {
       console.error("File scan error:", err);
-      alert("Could not find a valid QR code in this image.");
+      alert("Could not find a valid QR code in this image. Please ensure the image is clear, high-resolution, and contains a scannable QR code.");
     } finally {
       setIsInitializing(false);
+      // Reset input so the same file can be selected again
+      if (fileInputRef.current) fileInputRef.current.value = '';
     }
   };
 

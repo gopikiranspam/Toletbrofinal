@@ -190,7 +190,13 @@ export const PropertyDetails: React.FC<PropertyDetailsProps> = ({
                   </div>
                   <div className="bg-slate-900/40 p-4 rounded-2xl border border-white/5 flex justify-between items-center">
                     <span className="text-[9px] font-black uppercase tracking-widest text-slate-500">Available From</span>
-                    <span className="text-sm font-bold text-white">{property.availableFrom ? new Date(property.availableFrom).toLocaleDateString() : 'Immediate'}</span>
+                    <span className="text-sm font-bold text-white">
+                      {property.availableFrom ? (
+                        property.availableFrom.toDate ? 
+                        property.availableFrom.toDate().toLocaleDateString() : 
+                        new Date(property.availableFrom).toLocaleDateString()
+                      ) : 'Immediate'}
+                    </span>
                   </div>
                   <div className="bg-slate-900/40 p-4 rounded-2xl border border-white/5 flex justify-between items-center">
                     <span className="text-[9px] font-black uppercase tracking-widest text-slate-500">Preferred Tenant</span>

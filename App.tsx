@@ -8,6 +8,7 @@ import { PropertyCard } from './components/PropertyCard';
 import { ProfileSettings } from './components/ProfileSettings';
 import { AdminConsole } from './components/AdminConsole';
 import { PropertyDetails } from './components/PropertyDetails';
+import { MyProperties } from './components/MyProperties';
 import { User, Property, UserType } from './types';
 import { MOCK_PROPERTIES, MOCK_TESTIMONIALS, MOCK_USERS } from './constants';
 import { gemini } from './services/geminiService';
@@ -48,21 +49,28 @@ const App: React.FC = () => {
   const [searchType, setSearchType] = useState<'rent' | 'buy'>('rent');
   const [isScanning, setIsScanning] = useState(false);
   const [properties, setProperties] = useState<Property[]>([]);
-  const [allUsers, setAllUsers] = useState<User[]>([]);
+  const [allUsers, setAllUsers] = useState<User[]>(MOCK_USERS);
   const [selectedPropertyId, setSelectedPropertyId] = useState<string | null>(null);
   const [favourites, setFavourites] = useState<string[]>([]);
   const [lastScannedQr, setLastScannedQr] = useState<string | null>(null);
+  const [scannedOwnerId, setScannedOwnerId] = useState<string | null>(null);
+  const [qrStatus, setQrStatus] = useState<'valid' | 'unlinked' | 'invalid' | null>(null);
   const [isQrInvalid, setIsQrInvalid] = useState(false);
+
+  const normalizedSearchQuery = searchQuery.trim().toUpperCase();
+  const isQrFormat = /^[A-Z]{3}\d{3}$/.test(normalizedSearchQuery);
+  const isSNoFormat = (s: string) => /^[A-Z]{3}\d{3}$/.test(s.toUpperCase());
+  const selectedProperty = properties.find(p => p.id === selectedPropertyId);
 
   useEffect(() => {
     const handleRouting = () => {
       const path = window.location.pathname;
-      const match = path.match(/\/properties\/qrcode\/([A-Z0-9]+)/i);
+      const match = path.match(/\/properties\/qrcode\/([a-zA-Z0-9_-]+)/i);
       if (match) {
-        const code = match[1].toUpperCase();
-        setSearchQuery(code);
-        setLastScannedQr(code);
-        setActiveTab('home');
+        const ownerId = match[1];
+        setScannedOwnerId(ownerId);
+        setLastScannedQr(ownerId);
+        setActiveTab('my-properties');
         // Clean up URL without reload
         window.history.replaceState({}, document.title, "/");
       }
@@ -125,32 +133,81 @@ const App: React.FC = () => {
   }, []);
 
   useEffect(() => {
-    const q = query(collection(db, "users"));
-    const unsubscribe = onSnapshot(q, (querySnapshot: any) => {
-      const users = querySnapshot.docs.map((doc: any) => ({
-        ...doc.data(),
-        id: doc.id
-      })) as User[];
-      if (users.length > 0) {
-        setAllUsers(users);
-      } else {
-        setAllUsers(MOCK_USERS);
-      }
-    }, (error: any) => {
-      console.error("Error listening to users:", error);
-      setAllUsers(MOCK_USERS);
-    });
+    if (!scannedOwnerId) {
+      return;
+    }
 
-    return () => unsubscribe();
-  }, []);
+    const fetchOwner = async () => {
+      try {
+        const userRef = doc(db, 'users', scannedOwnerId);
+        const userDoc = await getDoc(userRef);
+        if (userDoc.exists()) {
+          const userData = { ...userDoc.data(), id: userDoc.id } as User;
+          // Add to allUsers if not present
+          setAllUsers(prev => prev.find(u => u.id === userData.id) ? prev : [...prev, userData]);
+        } else {
+          // Fallback: check if scannedOwnerId is actually a qrCode (serial)
+          // This requires 'list' permissions which might be restricted
+          try {
+            const q = query(collection(db, "users"), where("qrCode", "==", scannedOwnerId.toUpperCase()));
+            const querySnapshot = await getDocs(q);
+            if (!querySnapshot.empty) {
+              const userData = { ...querySnapshot.docs[0].data(), id: querySnapshot.docs[0].id } as User;
+              setAllUsers(prev => prev.find(u => u.id === userData.id) ? prev : [...prev, userData]);
+            }
+          } catch (innerError: any) {
+            if (innerError.code === 'permission-denied') {
+              console.warn("Permission denied for serial lookup. Ensure 'list' is allowed on users collection for qrCode queries.");
+            } else {
+              throw innerError;
+            }
+          }
+        }
+      } catch (error: any) {
+        if (error.code !== 'permission-denied') {
+          console.error("Error fetching QR owner:", error);
+        }
+      }
+    };
+
+    fetchOwner();
+  }, [scannedOwnerId]);
+
+  useEffect(() => {
+    if (!isQrFormat || scannedOwnerId) return;
+
+    const fetchOwnerBySerial = async () => {
+      // Check if already in allUsers to avoid unnecessary queries
+      if (allUsers.find(u => u.qrCode?.toUpperCase() === normalizedSearchQuery)) return;
+
+      try {
+        const q = query(collection(db, "users"), where("qrCode", "==", normalizedSearchQuery));
+        const querySnapshot = await getDocs(q);
+        if (!querySnapshot.empty) {
+          const userData = { ...querySnapshot.docs[0].data(), id: querySnapshot.docs[0].id } as User;
+          setAllUsers(prev => prev.find(u => u.id === userData.id) ? prev : [...prev, userData]);
+        }
+      } catch (error: any) {
+        if (error.code === 'permission-denied') {
+          console.warn("Permission denied for serial lookup. Falling back to local data.");
+        } else {
+          console.error("Error fetching owner by serial:", error);
+        }
+      }
+    };
+
+    fetchOwnerBySerial();
+  }, [isQrFormat, normalizedSearchQuery, scannedOwnerId]);
 
   useEffect(() => {
     const q = query(collection(db, "properties"), orderBy("createdAt", "desc"));
     const unsubscribe = onSnapshot(q, (querySnapshot: any) => {
-      const firestoreProps = querySnapshot.docs.map((doc: any) => ({
-        ...doc.data(),
-        id: doc.id
-      })) as Property[];
+      const firestoreProps = querySnapshot.docs
+        .map((doc: any) => ({
+          ...doc.data(),
+          id: doc.id
+        }))
+        .filter((p: any) => !p.isSystemQR) as Property[];
       
       if (firestoreProps.length > 0) {
         setProperties(firestoreProps);
@@ -334,9 +391,18 @@ const App: React.FC = () => {
     setNewProp(prev => ({ ...prev, images: newImages }));
   };
 
-  const normalizedSearchQuery = searchQuery.trim().toUpperCase();
-  const isQrFormat = /^[A-Z]{3}\d{3}$/.test(normalizedSearchQuery);
-  const qrOwner = isQrFormat ? allUsers.find(u => u.qrCode?.toUpperCase() === normalizedSearchQuery) : null;
+  const qrOwner = useMemo(() => {
+    if (scannedOwnerId) {
+      const byId = allUsers.find(u => u.id === scannedOwnerId);
+      if (byId) return byId;
+      // Fallback for cases where serial might be passed as ID
+      return allUsers.find(u => u.qrCode?.toUpperCase() === scannedOwnerId.toUpperCase());
+    }
+    if (isQrFormat) {
+      return allUsers.find(u => u.qrCode?.toUpperCase() === normalizedSearchQuery);
+    }
+    return null;
+  }, [scannedOwnerId, isQrFormat, allUsers, normalizedSearchQuery]);
 
   const filteredProperties = useMemo(() => {
     let result = properties;
@@ -345,7 +411,14 @@ const App: React.FC = () => {
       result = result.filter(p => favourites.includes(p.id));
     }
 
-    if (normalizedSearchQuery) {
+    if (scannedOwnerId) {
+      if (qrOwner) {
+        result = result.filter(p => p.ownerId === qrOwner.id);
+      } else {
+        // If owner not found, we'll show the error message via conditional rendering
+        result = [];
+      }
+    } else if (normalizedSearchQuery) {
       if (isQrFormat) {
         if (qrOwner) {
           result = result.filter(p => p.ownerId === qrOwner.id);
@@ -364,12 +437,14 @@ const App: React.FC = () => {
       }
     }
 
-    result = result.filter(p => p.type === searchType);
+    if (!scannedOwnerId) {
+      result = result.filter(p => p.type === searchType);
+    }
     
     // Filter out occupied properties from public search
     result = result.filter(p => p.status !== 'occupied');
 
-    if (isNearbyActive && userCoords) {
+    if (isNearbyActive && userCoords && !scannedOwnerId) {
       result = result
         .map(p => ({
           ...p,
@@ -390,8 +465,11 @@ const App: React.FC = () => {
       
       try {
         await updateDoc(doc(db, "users", user.id), updatedData);
-      } catch (error) {
+      } catch (error: any) {
         console.error("Error updating profile in Firestore:", error);
+        if (error.code === 'permission-denied') {
+          alert("Missing or insufficient permissions to update profile. Please check your Firestore Security Rules.");
+        }
       }
     }
   };
@@ -554,9 +632,13 @@ const App: React.FC = () => {
       });
       
       setActiveTab('dashboard');
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error saving property:", error);
-      alert("Failed to save property. Please check your connection and try again.");
+      if (error.code === 'permission-denied') {
+        alert("Missing or insufficient permissions to save property. Please check your Firestore Security Rules.");
+      } else {
+        alert("Failed to save property. Please check your connection and try again.");
+      }
     }
   };
 
@@ -654,6 +736,26 @@ const App: React.FC = () => {
     );
   };
 
+  useEffect(() => {
+    if (!selectedProperty) return;
+    if (allUsers.find(u => u.id === selectedProperty.ownerId)) return;
+
+    const fetchPropertyOwner = async () => {
+      try {
+        const userRef = doc(db, 'users', selectedProperty.ownerId);
+        const userDoc = await getDoc(userRef);
+        if (userDoc.exists()) {
+          const userData = { ...userDoc.data(), id: userDoc.id } as User;
+          setAllUsers(prev => prev.find(u => u.id === userData.id) ? prev : [...prev, userData]);
+        }
+      } catch (error) {
+        console.error("Error fetching property owner:", error);
+      }
+    };
+
+    fetchPropertyOwner();
+  }, [selectedPropertyId, allUsers.length]);
+
   if (isAuthLoading) {
     return (
       <div className="min-h-screen bg-slate-950 flex items-center justify-center">
@@ -666,7 +768,7 @@ const App: React.FC = () => {
   const isFinder = user?.type === UserType.FINDER;
 
   const handleTabChange = (tab: string) => {
-    if (!user && (tab === 'dashboard' || tab === 'settings' || tab === 'favourites' || tab === 'admin')) {
+    if (!user && (tab === 'dashboard' || tab === 'settings' || tab === 'favourites' || tab === 'admin' || (tab === 'my-properties' && !scannedOwnerId))) {
       setShowAuth(true);
       return;
     }
@@ -700,35 +802,93 @@ const App: React.FC = () => {
     }
   };
 
-  const handleScan = (code: string) => {
-    let serial = code;
+  const handleScan = async (code: string) => {
+    let ownerId = '';
+    let serial = '';
     try {
-      // Check if it's a URL
       if (code.startsWith('http')) {
         const url = new URL(code);
-        const match = url.pathname.match(/\/properties\/qrcode\/([A-Z0-9]+)/i);
+        const match = url.pathname.match(/\/properties\/qrcode\/([a-zA-Z0-9_-]+)/i);
         if (match) {
-          serial = match[1];
+          ownerId = match[1];
+        } else {
+          serial = code.toUpperCase();
         }
+      } else {
+        serial = code.toUpperCase();
       }
     } catch (e) {
-      // Not a URL, assume it's the serial
+      serial = code.toUpperCase();
     }
 
-    setSearchQuery(serial.toUpperCase());
-    setLastScannedQr(serial.toUpperCase());
-    setIsQrInvalid(false);
-    setIsScanning(false);
-    setActiveTab('home');
-    setIsNearbyActive(false);
+    if (ownerId) {
+      // Check if ownerId is actually a UID or a serial
+      const userRef = doc(db, 'users', ownerId);
+      const userDoc = await getDoc(userRef);
+      if (userDoc.exists()) {
+        setScannedOwnerId(ownerId);
+        setLastScannedQr(ownerId);
+        setQrStatus('valid');
+      } else {
+        // Try as serial in users
+        const q = query(collection(db, "users"), where("qrCode", "==", ownerId.toUpperCase()));
+        const querySnapshot = await getDocs(q);
+        if (!querySnapshot.empty) {
+          setScannedOwnerId(querySnapshot.docs[0].id);
+          setLastScannedQr(ownerId.toUpperCase());
+          setQrStatus('valid');
+        } else {
+          // Check if it's a valid generated QR but not linked
+          const qGen = query(collection(db, "properties"), where("code", "==", ownerId.toUpperCase()));
+          const genSnapshot = await getDocs(qGen);
+          const systemQR = genSnapshot.docs.find(d => d.data().isSystemQR);
+          if (systemQR) {
+            setScannedOwnerId(ownerId.toUpperCase());
+            setQrStatus('unlinked');
+          } else {
+            setScannedOwnerId(ownerId);
+            setQrStatus('invalid');
+          }
+          setLastScannedQr(ownerId);
+        }
+      }
+      setIsQrInvalid(false);
+      setIsScanning(false);
+      setActiveTab('my-properties');
+      setIsNearbyActive(false);
+      setSearchQuery(''); 
+    } else if (serial) {
+      const q = query(collection(db, "users"), where("qrCode", "==", serial));
+      const querySnapshot = await getDocs(q);
+      if (!querySnapshot.empty) {
+        setScannedOwnerId(querySnapshot.docs[0].id);
+        setQrStatus('valid');
+      } else {
+        // Check if it's a valid generated QR but not linked
+        const qGen = query(collection(db, "properties"), where("code", "==", serial));
+        const genSnapshot = await getDocs(qGen);
+        const systemQR = genSnapshot.docs.find(d => d.data().isSystemQR);
+        if (systemQR) {
+          setScannedOwnerId(serial);
+          setQrStatus('unlinked');
+        } else {
+          setScannedOwnerId(serial);
+          setQrStatus('invalid');
+        }
+      }
+      setSearchQuery('');
+      setLastScannedQr(serial);
+      setIsQrInvalid(false);
+      setIsScanning(false);
+      setActiveTab('my-properties');
+      setIsNearbyActive(false);
+    }
   };
 
   const closeScanner = () => {
     setIsScanning(false);
     setActiveTab('home');
   };
-
-  const selectedProperty = properties.find(p => p.id === selectedPropertyId);
 
   // Aggregated Stats for Dashboard
   const allOwnerProperties = user ? properties.filter(p => p.ownerId === user.id) : [];
@@ -762,95 +922,219 @@ const App: React.FC = () => {
       activeTab={activeTab} 
       setActiveTab={handleTabChange}
       onLoginClick={() => setShowAuth(true)}
+      scannedOwnerId={scannedOwnerId}
     >
       <AnimatePresence mode="wait">
         {activeTab === 'home' && (
           <motion.div key="home" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} className="space-y-8 md:space-y-12">
-            <div className="text-center max-w-3xl mx-auto space-y-4 md:space-y-6 py-6 md:py-10 px-4">
-              <h1 className="text-3xl sm:text-4xl md:text-6xl font-extrabold tracking-tight">
-                Find Your Perfect <span className="text-indigo-500">Living Space</span>
-              </h1>
-              <p className="text-slate-400 text-base md:text-lg">Premium property listings with instant QR discovery and AI-powered insights.</p>
-              
-              <div className="bg-slate-900 p-4 md:p-6 rounded-3xl border border-slate-800 shadow-2xl space-y-4">
-                <div className="flex flex-col sm:flex-row justify-between items-center gap-4 border-b border-slate-800 pb-4">
-                  <div className="inline-flex bg-slate-800 p-1 rounded-xl w-full sm:w-auto">
-                    <button onClick={() => setSearchType('rent')} className={`flex-1 sm:flex-none px-6 md:px-8 py-2 md:py-2.5 rounded-lg text-xs md:text-sm font-semibold transition-all ${searchType === 'rent' ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-500/20' : 'text-slate-400 hover:text-white'}`}>Rent</button>
-                    <button onClick={() => setSearchType('buy')} className={`flex-1 sm:flex-none px-6 md:px-8 py-2 md:py-2.5 rounded-lg text-xs md:text-sm font-semibold transition-all ${searchType === 'buy' ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-500/20' : 'text-slate-400 hover:text-white'}`}>Buy</button>
+            {!scannedOwnerId ? (
+              <div className="text-center max-w-3xl mx-auto space-y-4 md:space-y-6 py-6 md:py-10 px-4">
+                <h1 className="text-3xl sm:text-4xl md:text-6xl font-extrabold tracking-tight">
+                  Find Your Perfect <span className="text-indigo-500">Living Space</span>
+                </h1>
+                <p className="text-slate-400 text-base md:text-lg">Premium property listings with instant QR discovery and AI-powered insights.</p>
+                
+                <div className="bg-slate-900 p-4 md:p-6 rounded-3xl border border-slate-800 shadow-2xl space-y-4">
+                  <div className="flex flex-col sm:flex-row justify-between items-center gap-4 border-b border-slate-800 pb-4">
+                    <div className="inline-flex bg-slate-800 p-1 rounded-xl w-full sm:w-auto">
+                      <button onClick={() => setSearchType('rent')} className={`flex-1 sm:flex-none px-6 md:px-8 py-2 md:py-2.5 rounded-lg text-xs md:text-sm font-semibold transition-all ${searchType === 'rent' ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-500/20' : 'text-slate-400 hover:text-white'}`}>Rent</button>
+                      <button onClick={() => setSearchType('buy')} className={`flex-1 sm:flex-none px-6 md:px-8 py-2 md:py-2.5 rounded-lg text-xs md:text-sm font-semibold transition-all ${searchType === 'buy' ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-500/20' : 'text-slate-400 hover:text-white'}`}>Buy</button>
+                    </div>
+                    <div className="flex items-center gap-2 w-full sm:w-auto justify-center">
+                      {isNearbyActive && (
+                        <div className="flex items-center gap-2 bg-slate-800 px-2.5 py-1 rounded-xl border border-slate-700">
+                          <span className="text-[9px] font-bold text-slate-500 uppercase">Radius:</span>
+                          <select 
+                            className="bg-transparent text-[10px] font-bold text-indigo-400 focus:ring-0 border-none p-0 cursor-pointer"
+                            value={radiusFilter}
+                            onChange={(e) => setRadiusFilter(Number(e.target.value))}
+                          >
+                            <option value={2}>2 km</option>
+                            <option value={5}>5 km</option>
+                            <option value={10}>10 km</option>
+                            <option value={20}>20 km</option>
+                          </select>
+                          <button onClick={() => setIsNearbyActive(false)} className="text-slate-500 hover:text-red-400 ml-1">
+                            <X className="w-3 h-3" />
+                          </button>
+                        </div>
+                      )}
+                      <button 
+                        onClick={findNearby}
+                        disabled={isFetchingLocation}
+                        className={`flex items-center gap-2 font-bold text-xs md:text-sm px-3 md:px-4 py-1.5 md:py-2 rounded-xl transition-all ${isNearbyActive ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-500/20' : 'bg-indigo-600/10 text-indigo-400 hover:bg-indigo-600/20'}`}
+                      >
+                        {isFetchingLocation ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Navigation className="w-3.5 h-3.5" />}
+                        {isNearbyActive ? 'Refine Near Me' : 'Find Nearby'}
+                      </button>
+                    </div>
                   </div>
-                  <div className="flex items-center gap-2 w-full sm:w-auto justify-center">
-                    {isNearbyActive && (
-                      <div className="flex items-center gap-2 bg-slate-800 px-2.5 py-1 rounded-xl border border-slate-700">
-                        <span className="text-[9px] font-bold text-slate-500 uppercase">Radius:</span>
-                        <select 
-                          className="bg-transparent text-[10px] font-bold text-indigo-400 focus:ring-0 border-none p-0 cursor-pointer"
-                          value={radiusFilter}
-                          onChange={(e) => setRadiusFilter(Number(e.target.value))}
-                        >
-                          <option value={2}>2 km</option>
-                          <option value={5}>5 km</option>
-                          <option value={10}>10 km</option>
-                          <option value={20}>20 km</option>
-                        </select>
-                        <button onClick={() => setIsNearbyActive(false)} className="text-slate-500 hover:text-red-400 ml-1">
-                          <X className="w-3 h-3" />
-                        </button>
-                      </div>
-                    )}
-                    <button 
-                      onClick={findNearby}
-                      disabled={isFetchingLocation}
-                      className={`flex items-center gap-2 font-bold text-xs md:text-sm px-3 md:px-4 py-1.5 md:py-2 rounded-xl transition-all ${isNearbyActive ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-500/20' : 'bg-indigo-600/10 text-indigo-400 hover:bg-indigo-600/20'}`}
-                    >
-                      {isFetchingLocation ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Navigation className="w-3.5 h-3.5" />}
-                      {isNearbyActive ? 'Refine Near Me' : 'Find Nearby'}
-                    </button>
-                  </div>
-                </div>
 
-                <div className="flex flex-col md:flex-row gap-3 md:gap-4">
-                  <div className="flex-1 relative">
-                    <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 md:w-5 h-4 md:h-5 text-slate-500" />
-                    <input type="text" placeholder="Location, locality or enter Owner S.No" className="w-full bg-slate-800 border-none rounded-2xl py-3 md:py-4 pl-11 md:pl-12 pr-4 text-xs md:text-sm focus:ring-2 focus:ring-indigo-500" value={searchQuery} onChange={(e) => { setSearchQuery(e.target.value); if(isNearbyActive) setIsNearbyActive(false); }} />
-                  </div>
-                  <div className="flex gap-2">
-                    <button onClick={() => setIsScanning(true)} className="flex-1 md:flex-none flex items-center justify-center gap-2 bg-slate-800 hover:bg-slate-700 px-4 md:px-6 py-3 md:py-4 rounded-2xl font-medium transition-colors border border-slate-700">
-                      <QrIcon className="w-4 md:w-5 h-4 md:h-5 text-indigo-500" /><span className="md:hidden text-xs">Scan QR</span>
-                    </button>
-                    <button className="flex-1 md:flex-none bg-indigo-600 hover:bg-indigo-700 px-6 md:px-10 py-3 md:py-4 rounded-2xl font-semibold text-xs md:text-sm transition-all shadow-lg shadow-indigo-500/20">Search</button>
+                  <div className="flex flex-col md:flex-row gap-3 md:gap-4">
+                    <div className="flex-1 relative">
+                      <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 md:w-5 h-4 md:h-5 text-slate-500" />
+                      <input type="text" placeholder="Location, locality or enter Owner S.No" className="w-full bg-slate-800 border-none rounded-2xl py-3 md:py-4 pl-11 md:pl-12 pr-4 text-xs md:text-sm focus:ring-2 focus:ring-indigo-500" value={searchQuery} onChange={(e) => { setSearchQuery(e.target.value); if(isNearbyActive) setIsNearbyActive(false); if(scannedOwnerId) setScannedOwnerId(null); }} />
+                    </div>
+                    <div className="flex gap-2">
+                      <button onClick={() => setIsScanning(true)} className="flex-1 md:flex-none flex items-center justify-center gap-2 bg-slate-800 hover:bg-slate-700 px-4 md:px-6 py-3 md:py-4 rounded-2xl font-medium transition-colors border border-slate-700">
+                        <QrIcon className="w-4 md:w-5 h-4 md:h-5 text-indigo-500" /><span className="md:hidden text-xs">Scan QR</span>
+                      </button>
+                      <button className="flex-1 md:flex-none bg-indigo-600 hover:bg-indigo-700 px-6 md:px-10 py-3 md:py-4 rounded-2xl font-semibold text-xs md:text-sm transition-all shadow-lg shadow-indigo-500/20">Search</button>
+                    </div>
                   </div>
                 </div>
               </div>
-            </div>
+            ) : (
+              <div className="py-6 md:py-10 px-4">
+                <div className="max-w-4xl mx-auto">
+                  <button 
+                    onClick={() => { setScannedOwnerId(null); setLastScannedQr(null); setQrStatus(null); }}
+                    className="flex items-center gap-2 text-slate-500 hover:text-white transition-colors mb-6 group"
+                  >
+                    <div className="w-8 h-8 bg-slate-900 rounded-full flex items-center justify-center border border-slate-800 group-hover:bg-slate-800 transition-all">
+                      <ChevronLeft className="w-4 h-4" />
+                    </div>
+                    <span className="text-xs font-black uppercase tracking-widest">Back to Search</span>
+                  </button>
+
+                  {qrOwner && (
+                    <div className="bg-slate-900 rounded-[2.5rem] border border-slate-800 p-6 md:p-8 mb-8 relative overflow-hidden">
+                      <div className="absolute top-0 right-0 w-64 h-64 bg-indigo-600/5 rounded-full blur-3xl -mr-32 -mt-32"></div>
+                      <div className="relative z-10 flex flex-col md:flex-row items-center gap-6 text-center md:text-left">
+                        <img src={qrOwner.avatar} className="w-24 h-24 rounded-3xl border-2 border-indigo-500/20 shadow-xl" alt="" />
+                        <div className="flex-1 space-y-2">
+                          <div className="flex flex-col md:flex-row md:items-center gap-2 md:gap-4">
+                            <h2 className="text-2xl md:text-3xl font-bold tracking-tight">{qrOwner.name}</h2>
+                            <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-indigo-600/10 text-indigo-400 rounded-full text-[10px] font-black uppercase tracking-widest border border-indigo-500/20">
+                              <ShieldCheck className="w-3 h-3" /> Verified Owner
+                            </span>
+                          </div>
+                          <p className="text-slate-400 text-sm max-w-xl">
+                            Viewing all properties posted by this owner. Scan the Smart Board on the property to view details instantly.
+                          </p>
+                          <div className="flex flex-wrap justify-center md:justify-start gap-4 pt-2">
+                            <div className="flex items-center gap-2 text-slate-500">
+                              <Building2 className="w-4 h-4" />
+                              <span className="text-xs font-bold">{filteredProperties.length} Active Listings</span>
+                            </div>
+                            <div className="flex items-center gap-2 text-slate-500">
+                              <QrIcon className="w-4 h-4" />
+                              <span className="text-xs font-bold font-mono uppercase">S.No: {lastScannedQr}</span>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
 
             <div className="space-y-6 md:space-y-8">
               <div className="flex items-center justify-between">
                 <div>
                   <h2 className="text-xl md:text-2xl font-bold">
-                    {isNearbyActive ? `Properties within ${radiusFilter}km` : 'Recommended for you'}
+                    {scannedOwnerId && qrOwner ? `Properties by ${qrOwner.name}` : isNearbyActive ? `Properties within ${radiusFilter}km` : 'Recommended for you'}
                   </h2>
                   <p className="text-slate-400 text-xs md:text-sm">
-                    {isNearbyActive ? 'Sorted by nearest distance' : 'Based on your recent activity'}
+                    {scannedOwnerId && qrOwner ? 'Exclusive property listings for this owner' : isNearbyActive ? 'Sorted by nearest distance' : 'Based on your recent activity'}
                   </p>
                 </div>
-                {!isNearbyActive && <button className="flex items-center gap-1 text-indigo-500 font-semibold hover:text-indigo-400 transition-colors text-xs md:text-sm">View All <ChevronRight className="w-3.5 h-3.5" /></button>}
+                {(scannedOwnerId || isNearbyActive) ? (
+                  <button 
+                    onClick={() => { setScannedOwnerId(null); setIsNearbyActive(false); setSearchQuery(''); }} 
+                    className="text-indigo-500 font-bold text-xs md:text-sm hover:underline"
+                  >
+                    Reset View
+                  </button>
+                ) : (
+                  <button className="flex items-center gap-1 text-indigo-500 font-semibold hover:text-indigo-400 transition-colors text-xs md:text-sm">View All <ChevronRight className="w-3.5 h-3.5" /></button>
+                )}
               </div>
               
-                  {isQrFormat && !qrOwner && searchQuery.trim().toUpperCase() === lastScannedQr && (
-                    <div className="bg-rose-500/10 border border-rose-500/20 p-6 rounded-3xl text-center space-y-3">
-                      <AlertCircle className="w-10 h-10 text-rose-500 mx-auto" />
-                      <h3 className="text-lg font-bold text-white">Invalid or Expired QR Code</h3>
-                      <p className="text-slate-400 text-sm max-w-xs mx-auto">The QR code you scanned does not match any active property owner in our system.</p>
-                      <button onClick={() => { setSearchQuery(''); setLastScannedQr(null); }} className="px-6 py-2 bg-slate-800 rounded-xl text-xs font-bold uppercase tracking-widest">Clear Search</button>
+                  {scannedOwnerId && qrStatus === 'unlinked' && (
+                    <div className="bg-slate-900 border border-slate-800 p-8 md:p-12 rounded-[2.5rem] text-center space-y-6 max-w-lg mx-auto">
+                      <div className="w-20 h-20 bg-indigo-500/10 rounded-full flex items-center justify-center mx-auto">
+                        <QrIcon className="w-10 h-10 text-indigo-500" />
+                      </div>
+                      <div className="space-y-2">
+                        <h3 className="text-2xl font-bold text-white">Valid Board - Not Linked</h3>
+                        <p className="text-slate-400 text-sm leading-relaxed">
+                          This Smart Board (S.No: <span className="text-indigo-400 font-mono font-bold">{scannedOwnerId}</span>) is a genuine ToletBro board, but it hasn't been linked to an owner's account yet.
+                        </p>
+                      </div>
+                      <div className="pt-4">
+                        <button 
+                          onClick={() => { setScannedOwnerId(null); setLastScannedQr(null); setQrStatus(null); }} 
+                          className="w-full bg-slate-800 hover:bg-slate-700 py-4 rounded-2xl text-xs font-black uppercase tracking-widest transition-all"
+                        >
+                          Back to Search
+                        </button>
+                      </div>
                     </div>
                   )}
 
-                  {isQrFormat && qrOwner && filteredProperties.length === 0 && (
-                    <div className="bg-indigo-500/10 border border-indigo-500/20 p-6 rounded-3xl text-center space-y-3">
-                      <Info className="w-10 h-10 text-indigo-500 mx-auto" />
-                      <h3 className="text-lg font-bold text-white">No Properties Found</h3>
-                      <p className="text-slate-400 text-sm max-w-xs mx-auto">This owner currently has no active property listings available for {searchType}.</p>
-                      <button onClick={() => { setSearchQuery(''); setLastScannedQr(null); }} className="px-6 py-2 bg-slate-800 rounded-xl text-xs font-bold uppercase tracking-widest">View All Properties</button>
+                  {scannedOwnerId && qrStatus === 'invalid' && (
+                    <div className="bg-slate-900 border border-slate-800 p-8 md:p-12 rounded-[2.5rem] text-center space-y-6 max-w-lg mx-auto">
+                      <div className="w-20 h-20 bg-rose-500/10 rounded-full flex items-center justify-center mx-auto">
+                        <AlertCircle className="w-10 h-10 text-rose-500" />
+                      </div>
+                      <div className="space-y-2">
+                        <h3 className="text-2xl font-bold text-white">Invalid QR Code</h3>
+                        <p className="text-slate-400 text-sm leading-relaxed">
+                          The QR code you scanned is not a valid ToletBro Smart Board code. Please try again with a genuine board.
+                        </p>
+                      </div>
+                      <div className="pt-4">
+                        <button 
+                          onClick={() => { setScannedOwnerId(null); setLastScannedQr(null); setQrStatus(null); }} 
+                          className="w-full bg-slate-800 hover:bg-slate-700 py-4 rounded-2xl text-xs font-black uppercase tracking-widest transition-all"
+                        >
+                          Back to Search
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {scannedOwnerId && qrOwner && filteredProperties.length === 0 && (
+                    <div className="bg-slate-900 border border-slate-800 p-8 md:p-12 rounded-[2.5rem] text-center space-y-6 max-w-lg mx-auto">
+                      <div className="w-20 h-20 bg-indigo-500/10 rounded-full flex items-center justify-center mx-auto">
+                        <Building2 className="w-10 h-10 text-indigo-500" />
+                      </div>
+                      <div className="space-y-2">
+                        <h3 className="text-2xl font-bold text-white">No Properties Posted</h3>
+                        <p className="text-slate-400 text-sm leading-relaxed">
+                          Owner <span className="text-indigo-400 font-bold">{qrOwner.name}</span> has linked this board, but hasn't posted any active property listings yet.
+                        </p>
+                      </div>
+                      <div className="pt-4">
+                        <button 
+                          onClick={() => { setScannedOwnerId(null); setLastScannedQr(null); setQrStatus(null); }} 
+                          className="w-full bg-slate-800 hover:bg-slate-700 py-4 rounded-2xl text-xs font-black uppercase tracking-widest transition-all"
+                        >
+                          Back to Search
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {scannedOwnerId && qrOwner && filteredProperties.length > 0 && (
+                    <div className="mb-8 flex items-center justify-between bg-indigo-600/10 p-4 rounded-2xl border border-indigo-500/20">
+                      <div className="flex items-center gap-3">
+                        <div className="bg-indigo-600 p-2 rounded-xl">
+                          <QrIcon className="w-4 h-4 text-white" />
+                        </div>
+                        <div>
+                          <p className="text-[10px] font-black uppercase tracking-widest text-indigo-400">Viewing Listings For</p>
+                          <p className="text-sm font-bold text-white">{qrOwner.name}'s Smart Board</p>
+                        </div>
+                      </div>
+                      <button 
+                        onClick={() => { setScannedOwnerId(null); setLastScannedQr(null); setQrStatus(null); }}
+                        className="text-[10px] font-black uppercase tracking-widest text-slate-500 hover:text-white transition-colors"
+                      >
+                        Clear Filter
+                      </button>
                     </div>
                   )}
 
@@ -1104,9 +1388,26 @@ const App: React.FC = () => {
             onEditProperty={handleEditProperty}
             onDeleteProperty={handleDeleteProperty}
             onRepostProperty={handleRepostProperty}
+            setActiveTab={handleTabChange}
           />
         )}
         {activeTab === 'admin' && <AdminConsole />}
+
+        {activeTab === 'my-properties' && (
+          <MyProperties 
+            owner={activeTab === 'my-properties' && scannedOwnerId ? qrOwner : user}
+            properties={properties}
+            isOwnProfile={!!user && (!scannedOwnerId || user.id === scannedOwnerId)}
+            onBack={() => {
+              setScannedOwnerId(null);
+              setLastScannedQr(null);
+              setActiveTab('home');
+            }}
+            onSelectProperty={setSelectedPropertyId}
+            onEditProperty={handleEditProperty}
+            onDeleteProperty={handleDeleteProperty}
+          />
+        )}
 
         {activeTab === 'scan' && (
           <div className="min-h-[60vh] flex items-center justify-center">
@@ -1120,6 +1421,7 @@ const App: React.FC = () => {
                   onEditProperty={handleEditProperty}
                   onDeleteProperty={handleDeleteProperty}
                   onRepostProperty={handleRepostProperty}
+                  setActiveTab={handleTabChange}
                 />
               </div>
             ) : (

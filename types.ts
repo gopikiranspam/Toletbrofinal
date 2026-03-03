@@ -79,6 +79,9 @@ export interface Property {
   nearbyFacilities: string[];
   listedBy: 'Owner' | 'Agent';
   status?: 'active' | 'occupied';
+  isSystemQR?: boolean;
+  code?: string;
+  createdAt?: any;
   analytics?: PropertyAnalytics;
 }
 

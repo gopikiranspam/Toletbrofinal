@@ -1,6 +1,8 @@
 
 import { Property, Testimonial, User, UserType } from './types';
 
+export const QR_BASE_URL = 'https://www.toletbro.com/properties/qrcode';
+
 export const MODELS = {
   TEXT: 'gemini-3.1-pro-preview',
   IMAGE_GEN: 'gemini-2.5-flash-image',

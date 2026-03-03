@@ -1,89 +1,84 @@
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { LayoutGrid, Users, QrCode, Download, Printer, Plus, Search, Filter, Trash2, CheckCircle, Share2, FileArchive, Loader2 } from 'lucide-react';
+import { LayoutGrid, Users, QrCode, Download, Printer, Plus, Search, Filter, Trash2, CheckCircle, Share2, FileArchive, Loader2, AlertCircle } from 'lucide-react';
+import { QR_BASE_URL } from '../constants';
+import { generateStandardQRImage } from '../src/utils/qrUtils';
 import QRCode from 'qrcode';
 import JSZip from 'jszip';
+import { db } from '../firebase';
+import { collection, addDoc, getDocs, query, orderBy, deleteDoc, doc, serverTimestamp, onSnapshot, where } from 'firebase/firestore';
 
 interface GeneratedQR {
   id: string;
   code: string;
-  createdAt: string;
+  createdAt: any;
   status: 'Available' | 'Assigned' | 'Used';
 }
 
 export const AdminConsole: React.FC = () => {
-  const [qrList, setQrList] = useState<GeneratedQR[]>([
-    { id: '1', code: 'ABC586', createdAt: '2024-05-20', status: 'Available' },
-    { id: '2', code: 'XYZ921', createdAt: '2024-05-19', status: 'Assigned' },
-    { id: '3', code: 'LMN443', createdAt: '2024-05-18', status: 'Used' },
-  ]);
+  const [qrList, setQrList] = useState<GeneratedQR[]>([]);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  const generateBulk = (count: number) => {
-    const newCodes: GeneratedQR[] = [];
-    for (let i = 0; i < count; i++) {
-      const letters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
-      const randomLetters = letters.charAt(Math.floor(Math.random() * 26)) + 
-                           letters.charAt(Math.floor(Math.random() * 26)) + 
-                           letters.charAt(Math.floor(Math.random() * 26));
-      const randomNumbers = Math.floor(100 + Math.random() * 900).toString();
-      newCodes.push({
-        id: Math.random().toString(36).substr(2, 9),
-        code: `${randomLetters}${randomNumbers}`,
-        createdAt: new Date().toISOString().split('T')[0],
-        status: 'Available'
+  useEffect(() => {
+    const q = query(collection(db, "properties"), where("isSystemQR", "==", true));
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const list = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      })) as GeneratedQR[];
+      // Sort in memory to avoid composite index requirement
+      list.sort((a, b) => {
+        const dateA = a.createdAt?.seconds || 0;
+        const dateB = b.createdAt?.seconds || 0;
+        return dateB - dateA;
       });
-    }
-    setQrList([...newCodes, ...qrList]);
-  };
-
-  const generateQRImage = async (code: string): Promise<string> => {
-    // Create a temporary canvas to draw the QR and label
-    const canvas = document.createElement('canvas');
-    const qrSize = 400;
-    const padding = 40;
-    const textHeight = 80;
-    canvas.width = qrSize + (padding * 2);
-    canvas.height = qrSize + (padding * 2) + textHeight;
-
-    const ctx = canvas.getContext('2d');
-    if (!ctx) throw new Error("Could not get canvas context");
-
-    // Background
-    ctx.fillStyle = '#FFFFFF';
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-    // Generate QR Data URL first
-    const qrDataUrl = await QRCode.toDataURL(code, {
-      width: qrSize,
-      margin: 1,
-      color: {
-        dark: '#000000',
-        light: '#FFFFFF'
+      setQrList(list);
+      setError(null);
+    }, (err) => {
+      console.error("Snapshot listener failed", err);
+      if (err.code === 'permission-denied') {
+        setError("Missing or insufficient permissions to read system QRs. Please check your Firestore Security Rules.");
       }
     });
+    return () => unsubscribe();
+  }, []);
 
-    // Draw QR image onto canvas
-    const img = new Image();
-    await new Promise((resolve) => {
-      img.onload = resolve;
-      img.src = qrDataUrl;
-    });
-    ctx.drawImage(img, padding, padding);
-
-    // Draw Serial Number Text
-    ctx.fillStyle = '#000000';
-    ctx.font = 'bold 36px Inter, sans-serif';
-    ctx.textAlign = 'center';
-    ctx.fillText(`S.NO: ${code}`, canvas.width / 2, qrSize + padding + 60);
-
-    return canvas.toDataURL('image/png');
+  const generateBulk = async (count: number) => {
+    setIsProcessing(true);
+    setError(null);
+    try {
+      for (let i = 0; i < count; i++) {
+        const letters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+        const randomLetters = letters.charAt(Math.floor(Math.random() * 26)) + 
+                             letters.charAt(Math.floor(Math.random() * 26)) + 
+                             letters.charAt(Math.floor(Math.random() * 26));
+        const randomNumbers = Math.floor(100 + Math.random() * 900).toString();
+        const code = `${randomLetters}${randomNumbers}`;
+        
+        await addDoc(collection(db, "properties"), {
+          code,
+          status: 'Available',
+          isSystemQR: true,
+          createdAt: serverTimestamp()
+        });
+      }
+    } catch (err: any) {
+      console.error("Bulk generation failed", err);
+      if (err.code === 'permission-denied') {
+        setError("Missing or insufficient permissions to create system QRs. Ensure you have write access to the 'properties' collection.");
+      } else {
+        setError("Failed to generate QRs. Please try again.");
+      }
+    } finally {
+      setIsProcessing(false);
+    }
   };
 
   const handleDownload = async (qr: GeneratedQR) => {
     try {
-      const dataUrl = await generateQRImage(qr.code);
+      const dataUrl = await generateStandardQRImage(qr.code, qr.code);
       const link = document.createElement('a');
       link.href = dataUrl;
       link.download = `ToletBro_QR_${qr.code}.png`;
@@ -97,7 +92,7 @@ export const AdminConsole: React.FC = () => {
 
   const handleShare = async (qr: GeneratedQR) => {
     try {
-      const dataUrl = await generateQRImage(qr.code);
+      const dataUrl = await generateStandardQRImage(qr.code, qr.code);
       const res = await fetch(dataUrl);
       const blob = await res.blob();
       const file = new File([blob], `ToletBro_QR_${qr.code}.png`, { type: 'image/png' });
@@ -117,9 +112,17 @@ export const AdminConsole: React.FC = () => {
     }
   };
 
-  const handleDelete = (id: string) => {
+  const handleDelete = async (id: string) => {
     if (confirm("Are you sure you want to delete this QR code?")) {
-      setQrList(qrList.filter(item => item.id !== id));
+      setError(null);
+      try {
+        await deleteDoc(doc(db, "properties", id));
+      } catch (err: any) {
+        console.error("Delete failed", err);
+        if (err.code === 'permission-denied') {
+          setError("Missing or insufficient permissions to delete this QR. Check your security rules.");
+        }
+      }
     }
   };
 
@@ -128,7 +131,7 @@ export const AdminConsole: React.FC = () => {
     try {
       const zip = new JSZip();
       for (const qr of qrList) {
-        const dataUrl = await generateQRImage(qr.code);
+        const dataUrl = await generateStandardQRImage(qr.code, qr.code);
         // Extract base64 part
         const base64Data = dataUrl.split(',')[1];
         zip.file(`${qr.code}.png`, base64Data, { base64: true });
@@ -149,7 +152,7 @@ export const AdminConsole: React.FC = () => {
 
   const handlePrint = async (qr: GeneratedQR) => {
     try {
-      const dataUrl = await generateQRImage(qr.code);
+      const dataUrl = await generateStandardQRImage(qr.code, qr.code);
       const printWindow = window.open('', '_blank');
       if (printWindow) {
         printWindow.document.write(`
@@ -203,6 +206,13 @@ export const AdminConsole: React.FC = () => {
           </button>
         </div>
       </div>
+
+      {error && (
+        <div className="bg-rose-500/10 border border-rose-500/20 p-4 rounded-2xl flex items-center gap-3 text-rose-500">
+          <AlertCircle className="w-5 h-5 flex-shrink-0" />
+          <p className="text-sm font-medium">{error}</p>
+        </div>
+      )}
 
       <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
         <div className="bg-slate-900 p-6 rounded-3xl border border-slate-800">
@@ -260,7 +270,9 @@ export const AdminConsole: React.FC = () => {
                       <span className="font-mono font-bold text-indigo-400">{qr.code}</span>
                     </div>
                   </td>
-                  <td className="px-6 py-4 text-sm text-slate-400">{qr.createdAt}</td>
+                  <td className="px-6 py-4 text-sm text-slate-400">
+                    {qr.createdAt?.toDate ? qr.createdAt.toDate().toLocaleDateString() : 'Just now'}
+                  </td>
                   <td className="px-6 py-4">
                     <span className={`text-[10px] font-bold px-2 py-1 rounded-full uppercase ${
                       qr.status === 'Available' ? 'bg-green-500/10 text-green-400' :

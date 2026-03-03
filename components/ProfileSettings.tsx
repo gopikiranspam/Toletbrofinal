@@ -1,6 +1,8 @@
 
 import React, { useState, useEffect } from 'react';
 import { User, UserType, Language } from '../types';
+import { QR_BASE_URL } from '../constants';
+import { generateStandardQRImage } from '../src/utils/qrUtils';
 import { 
   User as UserIcon, Shield, ChevronRight, Package, Smartphone, 
   Download, Share2, Printer, ArrowLeft, Loader2, QrCode,
@@ -18,6 +20,7 @@ interface ProfileSettingsProps {
   onEditProperty?: (property: any) => void;
   onDeleteProperty?: (id: string) => void;
   onRepostProperty?: (id: string) => void;
+  setActiveTab?: (tab: string) => void;
 }
 
 type ToolView = 'main' | 'selection' | 'generate' | 'setup' | 'active_board' | 'privacy' | 'my_properties' | 'profile';
@@ -34,7 +37,7 @@ const AVAILABLE_TAGS = [
 ];
 
 export const ProfileSettings: React.FC<ProfileSettingsProps> = ({ 
-  user, onUpdate, onLogout, properties = [], onEditProperty, onDeleteProperty, onRepostProperty 
+  user, onUpdate, onLogout, properties = [], onEditProperty, onDeleteProperty, onRepostProperty, setActiveTab
 }) => {
   const [name, setName] = useState(user.name);
   const [language, setLanguage] = useState<Language>(user.language || 'English');
@@ -85,36 +88,6 @@ export const ProfileSettings: React.FC<ProfileSettingsProps> = ({
     }, 800);
   };
 
-  const generateQRImage = async (code: string): Promise<string> => {
-    const canvas = document.createElement('canvas');
-    const qrSize = 400;
-    const padding = 40;
-    const textHeight = 80;
-    canvas.width = qrSize + (padding * 2);
-    canvas.height = qrSize + (padding * 2) + textHeight;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) throw new Error("Could not get canvas context");
-    ctx.fillStyle = '#FFFFFF';
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
-    
-    // Create the unique hyperlink for the property owner
-    const qrUrl = `${window.location.origin}/properties/qrcode/${code}`;
-    
-    const qrDataUrl = await QRCode.toDataURL(qrUrl, { 
-      width: qrSize, 
-      margin: 1, 
-      color: { dark: '#000000', light: '#FFFFFF' } 
-    });
-    const img = new Image();
-    await new Promise((resolve) => { img.onload = resolve; img.src = qrDataUrl; });
-    ctx.drawImage(img, padding, padding);
-    ctx.fillStyle = '#000000';
-    ctx.font = 'bold 36px Inter, sans-serif';
-    ctx.textAlign = 'center';
-    ctx.fillText(`S.NO: ${code}`, canvas.width / 2, qrSize + padding + 60);
-    return canvas.toDataURL('image/png');
-  };
-
   const toggleTag = (tag: string) => {
     const currentTags = user.ownerTags || [];
     if (currentTags.includes(tag)) {
@@ -125,12 +98,13 @@ export const ProfileSettings: React.FC<ProfileSettingsProps> = ({
   };
 
   const handleDownload = async () => {
-    if (!user.qrCode) return;
+    if (!user.id) return;
     try {
-      const dataUrl = await generateQRImage(user.qrCode);
+      const label = user.qrCode || user.id;
+      const dataUrl = await generateStandardQRImage(label, label);
       const link = document.createElement('a');
       link.href = dataUrl;
-      link.download = `ToletBro_User_QR_${user.qrCode}.png`;
+      link.download = `ToletBro_User_QR_${label}.png`;
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
@@ -138,9 +112,10 @@ export const ProfileSettings: React.FC<ProfileSettingsProps> = ({
   };
 
   const handlePrint = async () => {
-    if (!user.qrCode) return;
+    if (!user.id) return;
     try {
-      const dataUrl = await generateQRImage(user.qrCode);
+      const label = user.qrCode || user.id;
+      const dataUrl = await generateStandardQRImage(label, label);
       const printWindow = window.open('', '_blank');
       if (printWindow) {
         printWindow.document.write(`<html><body style="display:flex; justify-content:center; align-items:center; height:100vh; margin:0;"><img src="${dataUrl}" style="max-width:100%;" onload="window.print();window.close();" /></body></html>`);
@@ -218,10 +193,13 @@ export const ProfileSettings: React.FC<ProfileSettingsProps> = ({
                       <div className="space-y-3">
                         <div className="flex items-center gap-4 p-4 bg-slate-800/30 rounded-2xl border border-indigo-500/10">
                           <div className="bg-white p-2 rounded-xl">
-                            <QRCodeSVG value={user.qrCode} />
+                            <QRCodeSVG 
+                              value={`${QR_BASE_URL}/${user.qrCode || user.id}`} 
+                              label={user.qrCode || user.id}
+                            />
                           </div>
                           <div className="flex-1">
-                            <p className="text-lg font-mono font-bold text-indigo-400 tracking-tighter">{user.qrCode}</p>
+                            <p className="text-lg font-mono font-bold text-indigo-400 tracking-tighter">{user.qrCode || 'Smart Board'}</p>
                             <span className="text-[8px] font-black uppercase tracking-widest text-emerald-500 flex items-center gap-1 mt-0.5">
                               <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse"></span>
                               Active
@@ -304,7 +282,19 @@ export const ProfileSettings: React.FC<ProfileSettingsProps> = ({
                   <motion.div key="selection" initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="space-y-6 py-4">
                     <div className="bg-slate-800/50 rounded-3xl p-1 overflow-hidden border border-slate-700/50">
                       <QRScanner onScan={(code) => {
-                        onUpdate({ qrCode: code });
+                        let serial = code;
+                        try {
+                          if (code.startsWith('http')) {
+                            const url = new URL(code);
+                            const match = url.pathname.match(/\/properties\/qrcode\/([a-zA-Z0-9_-]+)/i);
+                            if (match) {
+                              serial = match[1];
+                            }
+                          }
+                        } catch (e) {
+                          serial = code;
+                        }
+                        onUpdate({ qrCode: serial.toUpperCase() });
                         setToolView('main');
                         alert('Board linked successfully!');
                       }} onClose={() => setToolView('setup')} />
@@ -495,7 +485,7 @@ export const ProfileSettings: React.FC<ProfileSettingsProps> = ({
         {user.type === UserType.OWNER && (
           <div className="bg-slate-900/50 rounded-2xl md:rounded-3xl border border-slate-800/50 overflow-hidden">
             <button 
-              onClick={() => setToolView('my_properties')}
+              onClick={() => setActiveTab ? setActiveTab('my-properties') : setToolView('my_properties')}
               className="w-full flex items-center justify-between p-4 hover:bg-slate-800/30 transition-all group"
             >
               <div className="flex items-center gap-3">
@@ -616,8 +606,44 @@ export const ProfileSettings: React.FC<ProfileSettingsProps> = ({
   );
 };
 
-const QRCodeSVG: React.FC<{ value: string }> = ({ value }) => {
+const QRCodeSVG: React.FC<{ value: string; label: string }> = ({ value, label }) => {
   const [dataUrl, setDataUrl] = useState<string>('');
-  useEffect(() => { if (value) QRCode.toDataURL(value, { width: 200, margin: 1 }).then(setDataUrl); }, [value]);
-  return dataUrl ? <img src={dataUrl} alt="QR" className="w-32 h-32" /> : <div className="w-32 h-32 bg-slate-800 animate-pulse flex items-center justify-center"><Loader2 className="animate-spin text-slate-500" /></div>;
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    const generate = async () => {
+      if (!value) return;
+      setIsLoading(true);
+      try {
+        // Extract the ID from the URL if it's a full URL
+        let id = value;
+        if (value.includes('/')) {
+          id = value.split('/').pop() || value;
+        }
+        const url = await generateStandardQRImage(id, label);
+        setDataUrl(url);
+      } catch (err) {
+        console.error("QR Preview generation failed", err);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+    generate();
+  }, [value, label]);
+
+  if (isLoading) {
+    return (
+      <div className="w-32 h-32 bg-slate-800 animate-pulse flex items-center justify-center rounded-xl">
+        <Loader2 className="animate-spin text-slate-500" />
+      </div>
+    );
+  }
+
+  return dataUrl ? (
+    <img src={dataUrl} alt="QR Preview" className="w-32 h-auto rounded-lg shadow-lg border border-white/5" />
+  ) : (
+    <div className="w-32 h-32 bg-slate-800 flex items-center justify-center rounded-xl">
+      <AlertCircle className="w-6 h-6 text-slate-600" />
+    </div>
+  );
 };

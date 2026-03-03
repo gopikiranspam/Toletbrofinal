@@ -10,9 +10,10 @@ interface LayoutProps {
   activeTab: string;
   setActiveTab: (tab: string) => void;
   onLoginClick?: () => void;
+  scannedOwnerId?: string | null;
 }
 
-export const Layout: React.FC<LayoutProps> = ({ children, user, onLogout, activeTab, setActiveTab, onLoginClick }) => {
+export const Layout: React.FC<LayoutProps> = ({ children, user, onLogout, activeTab, setActiveTab, onLoginClick, scannedOwnerId }) => {
   const isOwner = user?.type === UserType.OWNER;
   const isFinder = user?.type === UserType.FINDER;
 
@@ -39,17 +40,24 @@ export const Layout: React.FC<LayoutProps> = ({ children, user, onLogout, active
                 Dashboard
               </button>
               <button 
+                onClick={() => setActiveTab('my-properties')} 
+                className={`hover:text-white transition-colors flex items-center gap-2 ${activeTab === 'my-properties' ? 'text-white font-bold' : ''}`}
+              >
+                <Package className="w-4 h-4" />
+                My Properties
+              </button>
+              <button 
                 onClick={() => setActiveTab('home')} 
                 className={`hover:text-white transition-colors flex items-center gap-2 ${activeTab === 'home' ? 'text-white font-bold' : ''}`}
               >
                 <Home className="w-4 h-4" />
-                {isOwner ? 'Marketplace' : 'Home'}
+                Marketplace
               </button>
               <button 
                 onClick={() => setActiveTab('settings')} 
                 className={`hover:text-white transition-colors flex items-center gap-2 ${activeTab === 'settings' ? 'text-white font-bold' : ''}`}
               >
-                <Package className="w-4 h-4" />
+                <ShieldCheck className="w-4 h-4" />
                 Smart Tolet Board
               </button>
             </>
@@ -61,6 +69,15 @@ export const Layout: React.FC<LayoutProps> = ({ children, user, onLogout, active
               <button onClick={() => setActiveTab('scan')} className={`hover:text-white transition-colors flex items-center gap-2 ${activeTab === 'scan' ? 'text-white font-bold' : ''}`}>
                 <Scan className="w-4 h-4" /> Scan QR
               </button>
+              {scannedOwnerId && (
+                <button 
+                  onClick={() => setActiveTab('my-properties')} 
+                  className={`hover:text-white transition-colors flex items-center gap-2 ${activeTab === 'my-properties' ? 'text-white font-bold' : ''}`}
+                >
+                  <Package className="w-4 h-4" />
+                  Owner Properties
+                </button>
+              )}
               {(!user || isFinder) && (
                 <button 
                   onClick={() => setActiveTab('dashboard')} 
@@ -144,9 +161,13 @@ export const Layout: React.FC<LayoutProps> = ({ children, user, onLogout, active
               <LayoutDashboard className="w-5 h-5" />
               <span className="text-[9px] font-medium">Dashboard</span>
             </button>
+            <button onClick={() => setActiveTab('my-properties')} className={`flex flex-col items-center gap-1 ${activeTab === 'my-properties' ? 'text-indigo-500' : 'text-slate-500'}`}>
+              <Package className="w-5 h-5" />
+              <span className="text-[9px] font-medium">My Props</span>
+            </button>
             <button onClick={() => setActiveTab('home')} className={`flex flex-col items-center gap-1 ${activeTab === 'home' ? 'text-indigo-500' : 'text-slate-500'}`}>
               <Home className="w-5 h-5" />
-              <span className="text-[9px] font-medium">Marketplace</span>
+              <span className="text-[9px] font-medium">Market</span>
             </button>
             <button onClick={() => setActiveTab('settings')} className={`flex flex-col items-center gap-1 ${activeTab === 'settings' ? 'text-indigo-500' : 'text-slate-500'}`}>
               <UserIcon className="w-5 h-5" />
@@ -165,10 +186,17 @@ export const Layout: React.FC<LayoutProps> = ({ children, user, onLogout, active
               </div>
               <span className="text-[9px] font-medium">Scan</span>
             </button>
-            <button onClick={() => setActiveTab('favourites')} className={`flex flex-col items-center gap-1 ${activeTab === 'favourites' ? 'text-indigo-500' : 'text-slate-500'}`}>
-              <Heart className={`w-5 h-5 ${activeTab === 'favourites' ? 'fill-current' : ''}`} />
-              <span className="text-[9px] font-medium">Saved</span>
-            </button>
+            {scannedOwnerId ? (
+              <button onClick={() => setActiveTab('my-properties')} className={`flex flex-col items-center gap-1 ${activeTab === 'my-properties' ? 'text-indigo-500' : 'text-slate-500'}`}>
+                <Package className="w-5 h-5" />
+                <span className="text-[9px] font-medium">Owner</span>
+              </button>
+            ) : (
+              <button onClick={() => setActiveTab('favourites')} className={`flex flex-col items-center gap-1 ${activeTab === 'favourites' ? 'text-indigo-500' : 'text-slate-500'}`}>
+                <Heart className={`w-5 h-5 ${activeTab === 'favourites' ? 'fill-current' : ''}`} />
+                <span className="text-[9px] font-medium">Saved</span>
+              </button>
+            )}
           </>
         )}
       </nav>
