@@ -216,7 +216,7 @@ export const Auth: React.FC<AuthProps> = ({ onLogin, onClose }) => {
     } catch (err: any) {
       console.error("Error saving user details:", err);
       if (err.code === 'permission-denied') {
-        setError("Missing or insufficient permissions to create profile. Please check your Firestore Security Rules.");
+        setError("Missing or insufficient permissions to create profile. This is likely due to Firestore Security Rules. Please ensure your rules allow users to write to their own document in the 'users' collection.");
       } else {
         setError("Failed to save profile. Please try again.");
       }

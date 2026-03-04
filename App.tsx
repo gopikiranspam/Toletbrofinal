@@ -218,10 +218,11 @@ const App: React.FC = () => {
         setProperties(MOCK_PROPERTIES);
       }
     }, (error: any) => {
-      console.error("Error listening to properties:", error);
       if (error.code === 'permission-denied') {
-        console.warn("Firestore read permission denied for properties collection. Falling back to mock data.");
+        console.warn("Firestore read permission denied for properties collection. Falling back to mock data. Please check your Firestore Security Rules.");
         setProperties(MOCK_PROPERTIES);
+      } else {
+        console.error("Error listening to properties:", error);
       }
     });
 
@@ -750,8 +751,12 @@ const App: React.FC = () => {
           const userData = { ...userDoc.data(), id: userDoc.id } as User;
           setAllUsers(prev => prev.find(u => u.id === userData.id) ? prev : [...prev, userData]);
         }
-      } catch (error) {
-        console.error("Error fetching property owner:", error);
+      } catch (error: any) {
+        if (error.code === 'permission-denied') {
+          console.warn("Permission denied fetching property owner. This is likely due to Firestore Security Rules. Falling back to mock data if available.");
+        } else {
+          console.error("Error fetching property owner:", error);
+        }
       }
     };
 

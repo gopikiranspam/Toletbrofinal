@@ -39,7 +39,7 @@ export const AdminConsole: React.FC = () => {
     }, (err) => {
       console.error("Snapshot listener failed", err);
       if (err.code === 'permission-denied') {
-        setError("Missing or insufficient permissions to read system QRs. Please check your Firestore Security Rules.");
+        setError("Missing or insufficient permissions to read system QRs. This is likely due to Firestore Security Rules. Please ensure your rules allow read access to the 'properties' collection.");
       }
     });
     return () => unsubscribe();
