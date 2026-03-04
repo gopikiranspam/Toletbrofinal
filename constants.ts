@@ -1,7 +1,7 @@
 
 import { Property, Testimonial, User, UserType } from './types';
 
-export const QR_BASE_URL = `${typeof window !== 'undefined' ? window.location.origin : 'https://www.toletbro.com'}/properties/qrcode`;
+export const QR_BASE_URL = `${typeof window !== 'undefined' ? window.location.origin : 'https://www.toletbro.com'}/owner`;
 
 export const MODELS = {
   TEXT: 'gemini-3.1-pro-preview',

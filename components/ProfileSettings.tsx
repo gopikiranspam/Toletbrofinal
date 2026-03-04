@@ -39,6 +39,8 @@ const AVAILABLE_TAGS = [
 export const ProfileSettings: React.FC<ProfileSettingsProps> = ({ 
   user, onUpdate, onLogout, properties = [], onEditProperty, onDeleteProperty, onRepostProperty, setActiveTab
 }) => {
+  if (!user) return null;
+
   const [name, setName] = useState(user.name);
   const [language, setLanguage] = useState<Language>(user.language || 'English');
   const [toolView, setToolView] = useState<ToolView>('main');

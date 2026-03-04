@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { BrowserRouter, Routes, Route, useNavigate, useLocation, useParams, Navigate } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, useNavigate, useLocation, useParams, Navigate, useMatch } from 'react-router-dom';
 import { Auth } from './components/Auth';
 import { Layout } from './components/Layout';
 import { ChatBot } from './components/ChatBot';
@@ -64,6 +64,18 @@ const App: React.FC = () => {
   const isSNoFormat = (s: string) => /^[A-Z]{3}\d{3}$/.test(s.toUpperCase());
   const selectedProperty = properties.find(p => p.id === selectedPropertyId);
 
+  const propertyMatch = useMatch('/property/:propertyId');
+  const propertyId = propertyMatch?.params.propertyId;
+
+  useEffect(() => {
+    if (propertyId) {
+      setSelectedPropertyId(propertyId);
+    } else if (location.pathname.startsWith('/property/')) {
+       // Handle case where path is just /property/
+       setSelectedPropertyId(null);
+    }
+  }, [propertyId, location.pathname]);
+
   useEffect(() => {
     const handleRouting = () => {
       const path = window.location.pathname;
@@ -72,9 +84,7 @@ const App: React.FC = () => {
         const ownerId = match[1];
         setScannedOwnerId(ownerId);
         setLastScannedQr(ownerId);
-        navigate('/my-properties');
-        // Clean up URL without reload
-        window.history.replaceState({}, document.title, "/");
+        navigate(`/owner/${ownerId}/properties`);
       }
     };
     handleRouting();
@@ -634,7 +644,7 @@ const App: React.FC = () => {
         preferredTenant: 'Anyone'
       });
       
-      navigate('/dashboard');
+      navigate(user ? `/user/${user.id}/dashboard` : '/dashboard');
     } catch (error: any) {
       console.error("Error saving property:", error);
       if (error.code === 'permission-denied') {
@@ -783,11 +793,11 @@ const App: React.FC = () => {
     
     const routeMap: Record<string, string> = {
       'home': '/',
-      'dashboard': '/dashboard',
-      'settings': '/profile',
+      'dashboard': user ? `/user/${user.id}/dashboard` : '/dashboard',
+      'settings': user ? `/user/${user.id}/profile` : '/profile',
       'favourites': '/saved',
       'admin': '/admin',
-      'my-properties': '/my-properties',
+      'my-properties': user ? `/user/${user.id}/my-properties` : '/my-properties',
       'scan': '/scan'
     };
 
@@ -798,7 +808,7 @@ const App: React.FC = () => {
   const handleAuthSuccess = (userData: User) => {
     setUser(userData);
     setShowAuth(false);
-    navigate('/dashboard');
+    navigate(`/user/${userData.id}/dashboard`);
   };
 
   const handleAddPropertyClick = () => {
@@ -821,13 +831,26 @@ const App: React.FC = () => {
     }
   };
 
+  const handleSelectProperty = (id: string | null) => {
+    if (id) {
+      navigate(`/property/${id}`);
+    } else {
+      // Navigate back to the previous page or home
+      if (location.pathname.startsWith('/property/')) {
+        navigate(-1);
+      } else {
+        setSelectedPropertyId(null);
+      }
+    }
+  };
+
   const handleScan = async (code: string) => {
     let ownerId = '';
     let serial = '';
     try {
       if (code.startsWith('http')) {
         const url = new URL(code);
-        const match = url.pathname.match(/\/properties\/qrcode\/([a-zA-Z0-9_-]+)/i);
+        const match = url.pathname.match(/\/owner\/([a-zA-Z0-9_-]+)\/properties/i) || url.pathname.match(/\/properties\/qrcode\/([a-zA-Z0-9_-]+)/i);
         if (match) {
           ownerId = match[1];
         } else {
@@ -878,7 +901,7 @@ const App: React.FC = () => {
       }
       setIsQrInvalid(false);
       setIsScanning(false);
-      navigate('/my-properties');
+      navigate(`/owner/${ownerId}/properties`);
       setIsNearbyActive(false);
       setSearchQuery(''); 
     } else if (serial) {
@@ -904,7 +927,7 @@ const App: React.FC = () => {
       setLastScannedQr(serial);
       setIsQrInvalid(false);
       setIsScanning(false);
-      navigate('/my-properties');
+      navigate(`/owner/${serial}/properties`);
       setIsNearbyActive(false);
     }
   };
@@ -1151,7 +1174,7 @@ const App: React.FC = () => {
               <PropertyCard 
                 key={property.id} 
                 property={property} 
-                onClick={(id) => setSelectedPropertyId(id)}
+                onClick={(id) => handleSelectProperty(id)}
                 isFavourite={favourites.includes(property.id)}
                 onToggleFavourite={handleToggleFavourite}
                 isOwner={user?.id === property.ownerId}
@@ -1202,7 +1225,7 @@ const App: React.FC = () => {
             <PropertyCard 
               key={property.id} 
               property={property} 
-              onClick={(id) => setSelectedPropertyId(id)}
+              onClick={(id) => handleSelectProperty(id)}
               isFavourite={favourites.includes(property.id)}
               onToggleFavourite={handleToggleFavourite}
               isOwner={user?.id === property.ownerId}
@@ -1222,169 +1245,172 @@ const App: React.FC = () => {
     </motion.div>
   );
 
-  const DashboardView = () => (
-    <motion.div key="dashboard-tab" initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }} className="space-y-6 md:space-y-8">
-      {isOwner ? (
-        <div className="space-y-6 md:space-y-8">
-          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-            <div><h1 className="text-2xl md:text-3xl font-bold">My Dashboard</h1><p className="text-slate-400 text-xs md:text-sm">Manage your property listings and monitor performance</p></div>
-            <button onClick={handleAddPropertyClick} className="flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-700 px-6 py-2.5 md:py-3 rounded-xl font-semibold text-sm transition-all shadow-lg shadow-indigo-500/20">
-              <Plus className="w-4 md:w-5 h-4 md:h-5" /> Add New Property
-            </button>
-          </div>
+  const DashboardView = () => {
+    if (!user) return null;
+    return (
+      <motion.div key="dashboard-tab" initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }} className="space-y-6 md:space-y-8">
+        {isOwner ? (
+          <div className="space-y-6 md:space-y-8">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+              <div><h1 className="text-2xl md:text-3xl font-bold">My Dashboard</h1><p className="text-slate-400 text-xs md:text-sm">Manage your property listings and monitor performance</p></div>
+              <button onClick={handleAddPropertyClick} className="flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-700 px-6 py-2.5 md:py-3 rounded-xl font-semibold text-sm transition-all shadow-lg shadow-indigo-500/20">
+                <Plus className="w-4 md:w-5 h-4 md:h-5" /> Add New Property
+              </button>
+            </div>
 
-          {!user.qrCode && (
-            <motion.div 
-              initial={{ opacity: 0, y: -20 }} 
-              animate={{ opacity: 1, y: 0 }}
-              onClick={() => navigate('/profile')}
-              className="bg-gradient-to-br from-indigo-900/40 via-indigo-800/20 to-slate-900 p-5 md:p-6 rounded-[2rem] md:rounded-[2.5rem] border border-indigo-500/30 shadow-2xl relative overflow-hidden group cursor-pointer"
-            >
-              <div className="absolute top-0 right-0 w-64 h-64 bg-indigo-600/10 rounded-full blur-[80px] -mr-32 -mt-32"></div>
-              <div className="relative z-10 flex flex-col md:flex-row items-start justify-between gap-6">
-                <div className="flex-1 space-y-3 md:space-y-4">
-                  <div className="flex items-center gap-3">
-                    <div className="bg-indigo-600 p-2 rounded-xl shadow-lg shadow-indigo-600/20">
-                      <Sparkles className="w-4 md:w-5 h-4 md:h-5 text-white" />
-                    </div>
-                    <h2 className="text-lg md:text-xl font-bold text-white tracking-tight">Upgrade to Smart Tolet Board</h2>
-                  </div>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1.5 md:gap-y-2">
-                    {smartBoardAdvantages.map((adv, i) => (
-                      <div key={i} className="flex items-center gap-2 text-[10px] md:text-[11px] text-slate-300">
-                        <CheckCircle2 className="w-3 md:w-3.5 h-3 md:h-3.5 text-indigo-400 flex-shrink-0" />
-                        <span className="leading-tight">{adv}</span>
+            {!user.qrCode && (
+              <motion.div 
+                initial={{ opacity: 0, y: -20 }} 
+                animate={{ opacity: 1, y: 0 }}
+                onClick={() => navigate(`/user/${user.id}/profile`)}
+                className="bg-gradient-to-br from-indigo-900/40 via-indigo-800/20 to-slate-900 p-5 md:p-6 rounded-[2rem] md:rounded-[2.5rem] border border-indigo-500/30 shadow-2xl relative overflow-hidden group cursor-pointer"
+              >
+                <div className="absolute top-0 right-0 w-64 h-64 bg-indigo-600/10 rounded-full blur-[80px] -mr-32 -mt-32"></div>
+                <div className="relative z-10 flex flex-col md:flex-row items-start justify-between gap-6">
+                  <div className="flex-1 space-y-3 md:space-y-4">
+                    <div className="flex items-center gap-3">
+                      <div className="bg-indigo-600 p-2 rounded-xl shadow-lg shadow-indigo-600/20">
+                        <Sparkles className="w-4 md:w-5 h-4 md:h-5 text-white" />
                       </div>
-                    ))}
+                      <h2 className="text-lg md:text-xl font-bold text-white tracking-tight">Upgrade to Smart Tolet Board</h2>
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1.5 md:gap-y-2">
+                      {smartBoardAdvantages.map((adv, i) => (
+                        <div key={i} className="flex items-center gap-2 text-[10px] md:text-[11px] text-slate-300">
+                          <CheckCircle2 className="w-3 md:w-3.5 h-3 md:h-3.5 text-indigo-400 flex-shrink-0" />
+                          <span className="leading-tight">{adv}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="flex flex-col items-center gap-2 md:gap-3 bg-slate-900/40 p-4 md:p-5 rounded-[1.5rem] md:rounded-[2rem] border border-indigo-500/10 group-hover:bg-indigo-600/10 transition-all min-w-[120px] md:min-w-[140px]">
+                    <div className="bg-white p-2 md:p-2.5 rounded-xl shadow-xl shadow-indigo-500/10 opacity-70 group-hover:opacity-100 transition-opacity">
+                      <QrIcon className="w-8 md:w-10 h-8 md:h-10 text-slate-900" />
+                    </div>
+                    <span className="text-[9px] md:text-[10px] font-bold text-indigo-400 group-hover:text-indigo-300 text-center uppercase tracking-wider">Setup Now <ChevronRight className="inline w-3 h-3 ml-0.5" /></span>
                   </div>
                 </div>
-                <div className="flex flex-col items-center gap-2 md:gap-3 bg-slate-900/40 p-4 md:p-5 rounded-[1.5rem] md:rounded-[2rem] border border-indigo-500/10 group-hover:bg-indigo-600/10 transition-all min-w-[120px] md:min-w-[140px]">
-                  <div className="bg-white p-2 md:p-2.5 rounded-xl shadow-xl shadow-indigo-500/10 opacity-70 group-hover:opacity-100 transition-opacity">
-                    <QrIcon className="w-8 md:w-10 h-8 md:h-10 text-slate-900" />
-                  </div>
-                  <span className="text-[9px] md:text-[10px] font-bold text-indigo-400 group-hover:text-indigo-300 text-center uppercase tracking-wider">Setup Now <ChevronRight className="inline w-3 h-3 ml-0.5" /></span>
+              </motion.div>
+            )}
+
+            <div className="grid grid-cols-3 md:grid-cols-3 gap-2 md:gap-6">
+              <div className="bg-slate-900 p-3 md:p-6 rounded-2xl md:rounded-3xl border border-slate-800 flex flex-col items-center justify-center text-center">
+                <div className="flex items-center gap-2 mb-1 md:mb-4">
+                  <BarChart3 className="w-3 md:w-5 h-3 md:h-5 text-indigo-500" />
+                  <h3 className="text-slate-400 text-[8px] md:text-sm font-medium uppercase tracking-tighter md:tracking-normal">Active</h3>
                 </div>
+                <span className="text-lg md:text-3xl font-bold">{activeOwnerProperties.length}</span>
               </div>
-            </motion.div>
-          )}
+              <div className="bg-slate-900 p-3 md:p-6 rounded-2xl md:rounded-3xl border border-slate-800 flex flex-col items-center justify-center text-center">
+                <div className="flex items-center gap-2 mb-1 md:mb-4">
+                  <QrIcon className="w-3 md:w-5 h-3 md:h-5 text-green-500" />
+                  <h3 className="text-slate-400 text-[8px] md:text-sm font-medium uppercase tracking-tighter md:tracking-normal">Scans</h3>
+                </div>
+                <span className="text-lg md:text-3xl font-bold">{totalScans}</span>
+              </div>
+              <div className="bg-slate-900 p-3 md:p-6 rounded-2xl md:rounded-3xl border border-slate-800 flex flex-col items-center justify-center text-center">
+                <div className="flex items-center gap-2 mb-1 md:mb-4">
+                  <Globe className="w-3 md:w-5 h-3 md:h-5 text-blue-500" />
+                  <h3 className="text-slate-400 text-[8px] md:text-sm font-medium uppercase tracking-tighter md:tracking-normal">Views</h3>
+                </div>
+                <span className="text-lg md:text-3xl font-bold">{totalViews}</span>
+              </div>
+            </div>
 
-          <div className="grid grid-cols-3 md:grid-cols-3 gap-2 md:gap-6">
-            <div className="bg-slate-900 p-3 md:p-6 rounded-2xl md:rounded-3xl border border-slate-800 flex flex-col items-center justify-center text-center">
-              <div className="flex items-center gap-2 mb-1 md:mb-4">
-                <BarChart3 className="w-3 md:w-5 h-3 md:h-5 text-indigo-500" />
-                <h3 className="text-slate-400 text-[8px] md:text-sm font-medium uppercase tracking-tighter md:tracking-normal">Active</h3>
-              </div>
-              <span className="text-lg md:text-3xl font-bold">{activeOwnerProperties.length}</span>
+            <div className="flex gap-4 border-b border-slate-800 mb-6">
+              <button 
+                onClick={() => setDashboardSubTab('active')}
+                className={`pb-4 px-2 text-sm font-bold transition-all relative ${dashboardSubTab === 'active' ? 'text-indigo-400' : 'text-slate-500 hover:text-slate-300'}`}
+              >
+                Active Listings ({activeOwnerProperties.length})
+                {dashboardSubTab === 'active' && <motion.div layoutId="dash-subtab" className="absolute bottom-0 left-0 right-0 h-0.5 bg-indigo-400" />}
+              </button>
+              <button 
+                onClick={() => setDashboardSubTab('past')}
+                className={`pb-4 px-2 text-sm font-bold transition-all relative ${dashboardSubTab === 'past' ? 'text-indigo-400' : 'text-slate-500 hover:text-slate-300'}`}
+              >
+                Past Properties ({pastOwnerProperties.length})
+                {dashboardSubTab === 'past' && <motion.div layoutId="dash-subtab" className="absolute bottom-0 left-0 right-0 h-0.5 bg-indigo-400" />}
+              </button>
             </div>
-            <div className="bg-slate-900 p-3 md:p-6 rounded-2xl md:rounded-3xl border border-slate-800 flex flex-col items-center justify-center text-center">
-              <div className="flex items-center gap-2 mb-1 md:mb-4">
-                <QrIcon className="w-3 md:w-5 h-3 md:h-5 text-green-500" />
-                <h3 className="text-slate-400 text-[8px] md:text-sm font-medium uppercase tracking-tighter md:tracking-normal">Scans</h3>
-              </div>
-              <span className="text-lg md:text-3xl font-bold">{totalScans}</span>
-            </div>
-            <div className="bg-slate-900 p-3 md:p-6 rounded-2xl md:rounded-3xl border border-slate-800 flex flex-col items-center justify-center text-center">
-              <div className="flex items-center gap-2 mb-1 md:mb-4">
-                <Globe className="w-3 md:w-5 h-3 md:h-5 text-blue-500" />
-                <h3 className="text-slate-400 text-[8px] md:text-sm font-medium uppercase tracking-tighter md:tracking-normal">Views</h3>
-              </div>
-              <span className="text-lg md:text-3xl font-bold">{totalViews}</span>
-            </div>
-          </div>
 
-          <div className="flex gap-4 border-b border-slate-800 mb-6">
-            <button 
-              onClick={() => setDashboardSubTab('active')}
-              className={`pb-4 px-2 text-sm font-bold transition-all relative ${dashboardSubTab === 'active' ? 'text-indigo-400' : 'text-slate-500 hover:text-slate-300'}`}
-            >
-              Active Listings ({activeOwnerProperties.length})
-              {dashboardSubTab === 'active' && <motion.div layoutId="dash-subtab" className="absolute bottom-0 left-0 right-0 h-0.5 bg-indigo-400" />}
-            </button>
-            <button 
-              onClick={() => setDashboardSubTab('past')}
-              className={`pb-4 px-2 text-sm font-bold transition-all relative ${dashboardSubTab === 'past' ? 'text-indigo-400' : 'text-slate-500 hover:text-slate-300'}`}
-            >
-              Past Properties ({pastOwnerProperties.length})
-              {dashboardSubTab === 'past' && <motion.div layoutId="dash-subtab" className="absolute bottom-0 left-0 right-0 h-0.5 bg-indigo-400" />}
-            </button>
-          </div>
-
-          <div className="bg-slate-900 rounded-3xl border border-slate-800 overflow-hidden">
-            <div className="p-6 border-b border-slate-800 flex items-center justify-between">
-              <h2 className="font-bold">{dashboardSubTab === 'active' ? 'Active Listings' : 'Past Properties'} Analytics</h2>
-              <p className="text-indigo-400 text-sm font-bold">Owner QR: {user.qrCode || 'Not Set'}</p>
-            </div>
-            <div className="divide-y divide-slate-800">
-              {(dashboardSubTab === 'active' ? activeOwnerProperties : pastOwnerProperties).map(p => (
-                <div key={p.id} className="p-8 flex flex-col lg:flex-row gap-8 hover:bg-slate-800/20 transition-all group/row">
-                  <div className="flex items-start gap-6 lg:w-1/3">
-                    <img src={p.images[0]} className="w-24 h-24 rounded-2xl object-cover shadow-lg" alt="" />
-                    <div>
-                      <div className="flex items-center justify-between">
-                        <h4 className="font-bold text-lg">{p.title}</h4>
-                        <div className="flex gap-2 opacity-0 group-hover/row:opacity-100 transition-opacity">
-                          {dashboardSubTab === 'past' && (
-                            <button onClick={() => handleRepostProperty(p.id)} title="Repost Property" className="p-1.5 bg-green-500/10 text-green-500 rounded-lg hover:bg-green-500 hover:text-white transition-all"><Zap className="w-3.5 h-3.5" /></button>
-                          )}
-                          <button onClick={() => handleEditProperty(p)} className="p-1.5 bg-indigo-600/20 text-indigo-400 rounded-lg hover:bg-indigo-600 hover:text-white transition-all"><Plus className="w-3.5 h-3.5 rotate-45" /></button>
-                          <button onClick={() => handleDeleteProperty(p.id)} className="p-1.5 bg-rose-500/10 text-rose-500 rounded-lg hover:bg-rose-500 hover:text-white transition-all"><X className="w-3.5 h-3.5" /></button>
+            <div className="bg-slate-900 rounded-3xl border border-slate-800 overflow-hidden">
+              <div className="p-6 border-b border-slate-800 flex items-center justify-between">
+                <h2 className="font-bold">{dashboardSubTab === 'active' ? 'Active Listings' : 'Past Properties'} Analytics</h2>
+                <p className="text-indigo-400 text-sm font-bold">Owner QR: {user.qrCode || 'Not Set'}</p>
+              </div>
+              <div className="divide-y divide-slate-800">
+                {(dashboardSubTab === 'active' ? activeOwnerProperties : pastOwnerProperties).map(p => (
+                  <div key={p.id} className="p-8 flex flex-col lg:flex-row gap-8 hover:bg-slate-800/20 transition-all group/row">
+                    <div className="flex items-start gap-6 lg:w-1/3">
+                      <img src={p.images[0]} className="w-24 h-24 rounded-2xl object-cover shadow-lg" alt="" />
+                      <div>
+                        <div className="flex items-center justify-between">
+                          <h4 className="font-bold text-lg">{p.title}</h4>
+                          <div className="flex gap-2 opacity-0 group-hover/row:opacity-100 transition-opacity">
+                            {dashboardSubTab === 'past' && (
+                              <button onClick={() => handleRepostProperty(p.id)} title="Repost Property" className="p-1.5 bg-green-500/10 text-green-500 rounded-lg hover:bg-green-500 hover:text-white transition-all"><Zap className="w-3.5 h-3.5" /></button>
+                            )}
+                            <button onClick={() => handleEditProperty(p)} className="p-1.5 bg-indigo-600/20 text-indigo-400 rounded-lg hover:bg-indigo-600 hover:text-white transition-all"><Plus className="w-3.5 h-3.5 rotate-45" /></button>
+                            <button onClick={() => handleDeleteProperty(p.id)} className="p-1.5 bg-rose-500/10 text-rose-500 rounded-lg hover:bg-rose-500 hover:text-white transition-all"><X className="w-3.5 h-3.5" /></button>
+                          </div>
+                        </div>
+                        <p className="text-slate-500 text-xs mb-3">{p.locality}, {p.location}</p>
+                        <div className="flex gap-2">
+                          <span className="px-2 py-1 bg-slate-800 rounded text-[10px] font-bold uppercase text-slate-400">{p.type}</span>
+                          <span className="px-2 py-1 bg-indigo-500/10 rounded text-[10px] font-bold uppercase text-indigo-400">₹{p.price}</span>
                         </div>
                       </div>
-                      <p className="text-slate-500 text-xs mb-3">{p.locality}, {p.location}</p>
-                      <div className="flex gap-2">
-                        <span className="px-2 py-1 bg-slate-800 rounded text-[10px] font-bold uppercase text-slate-400">{p.type}</span>
-                        <span className="px-2 py-1 bg-indigo-500/10 rounded text-[10px] font-bold uppercase text-indigo-400">₹{p.price}</span>
+                    </div>
+                    <div className="flex-1 grid grid-cols-2 sm:grid-cols-5 gap-4">
+                      <div className="bg-slate-950/50 p-3 rounded-2xl border border-slate-800 text-center">
+                        <span className="block text-xl font-bold text-white">{p.analytics?.totalVisitors || 0}</span>
+                        <span className="text-[10px] text-slate-500 uppercase font-bold tracking-tighter">Total Visitors</span>
+                      </div>
+                      <div className="bg-slate-950/50 p-3 rounded-2xl border border-slate-800 text-center">
+                        <span className="block text-xl font-bold text-green-400">{p.analytics?.smartBoardScans || 0}</span>
+                        <span className="text-[10px] text-slate-500 uppercase font-bold tracking-tighter">Board Scans</span>
+                      </div>
+                      <div className="bg-slate-950/50 p-3 rounded-2xl border border-slate-800 text-center">
+                        <span className="block text-xl font-bold text-blue-400">{p.analytics?.onlineSearches || 0}</span>
+                        <span className="text-[10px] text-slate-500 uppercase font-bold tracking-tighter">Online Search</span>
+                      </div>
+                      <div className="bg-slate-950/50 p-3 rounded-2xl border border-slate-800 text-center">
+                        <span className="block text-xl font-bold text-indigo-400">{p.analytics?.callClicks || 0}</span>
+                        <span className="text-[10px] text-slate-500 uppercase font-bold tracking-tighter">Call Attempts</span>
+                      </div>
+                      <div className="bg-slate-950/50 p-3 rounded-2xl border border-slate-800 text-center">
+                        <span className="block text-xl font-bold text-emerald-400">{p.analytics?.whatsappClicks || 0}</span>
+                        <span className="text-[10px] text-slate-500 uppercase font-bold tracking-tighter">WhatsApp Msg</span>
                       </div>
                     </div>
                   </div>
-                  <div className="flex-1 grid grid-cols-2 sm:grid-cols-5 gap-4">
-                    <div className="bg-slate-950/50 p-3 rounded-2xl border border-slate-800 text-center">
-                      <span className="block text-xl font-bold text-white">{p.analytics?.totalVisitors || 0}</span>
-                      <span className="text-[10px] text-slate-500 uppercase font-bold tracking-tighter">Total Visitors</span>
-                    </div>
-                    <div className="bg-slate-950/50 p-3 rounded-2xl border border-slate-800 text-center">
-                      <span className="block text-xl font-bold text-green-400">{p.analytics?.smartBoardScans || 0}</span>
-                      <span className="text-[10px] text-slate-500 uppercase font-bold tracking-tighter">Board Scans</span>
-                    </div>
-                    <div className="bg-slate-950/50 p-3 rounded-2xl border border-slate-800 text-center">
-                      <span className="block text-xl font-bold text-blue-400">{p.analytics?.onlineSearches || 0}</span>
-                      <span className="text-[10px] text-slate-500 uppercase font-bold tracking-tighter">Online Search</span>
-                    </div>
-                    <div className="bg-slate-950/50 p-3 rounded-2xl border border-slate-800 text-center">
-                      <span className="block text-xl font-bold text-indigo-400">{p.analytics?.callClicks || 0}</span>
-                      <span className="text-[10px] text-slate-500 uppercase font-bold tracking-tighter">Call Attempts</span>
-                    </div>
-                    <div className="bg-slate-950/50 p-3 rounded-2xl border border-slate-800 text-center">
-                      <span className="block text-xl font-bold text-emerald-400">{p.analytics?.whatsappClicks || 0}</span>
-                      <span className="text-[10px] text-slate-500 uppercase font-bold tracking-tighter">WhatsApp Msg</span>
-                    </div>
-                  </div>
-                </div>
-              ))}
+                ))}
+              </div>
             </div>
           </div>
-        </div>
-      ) : (
-        <div className="min-h-[60vh] flex flex-col items-center justify-center text-center px-4">
-          <div className="bg-indigo-600/10 p-6 rounded-[3rem] mb-8 border border-indigo-500/20">
-            <Building2 className="w-16 h-16 text-indigo-500" />
+        ) : (
+          <div className="min-h-[60vh] flex flex-col items-center justify-center text-center px-4">
+            <div className="bg-indigo-600/10 p-6 rounded-[3rem] mb-8 border border-indigo-500/20">
+              <Building2 className="w-16 h-16 text-indigo-500" />
+            </div>
+            <h2 className="text-3xl font-black mb-4">Start Your Property Journey</h2>
+            <p className="text-slate-400 max-w-md mx-auto mb-10 leading-relaxed">
+              Have a house to rent or sell? List your property today and get access to our premium Owner Dashboard and Smart Tolet features.
+            </p>
+            <button 
+              onClick={handleAddPropertyClick}
+              className="flex items-center gap-3 bg-indigo-600 hover:bg-indigo-700 px-10 py-5 rounded-2xl font-black transition-all shadow-xl shadow-indigo-600/30 group"
+            >
+              <PlusCircle className="w-6 h-6" />
+              List My Property Now
+              <ChevronRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
+            </button>
           </div>
-          <h2 className="text-3xl font-black mb-4">Start Your Property Journey</h2>
-          <p className="text-slate-400 max-w-md mx-auto mb-10 leading-relaxed">
-            Have a house to rent or sell? List your property today and get access to our premium Owner Dashboard and Smart Tolet features.
-          </p>
-          <button 
-            onClick={handleAddPropertyClick}
-            className="flex items-center gap-3 bg-indigo-600 hover:bg-indigo-700 px-10 py-5 rounded-2xl font-black transition-all shadow-xl shadow-indigo-600/30 group"
-          >
-            <PlusCircle className="w-6 h-6" />
-            List My Property Now
-            <ChevronRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
-          </button>
-        </div>
-      )}
-    </motion.div>
-  );
+        )}
+      </motion.div>
+    );
+  };
 
   const MyPropertiesWrapper = () => {
     const { ownerId } = useParams();
@@ -1405,7 +1431,7 @@ const App: React.FC = () => {
         properties={properties}
         isOwnProfile={isOwnProfile}
         onBack={() => navigate('/')}
-        onSelectProperty={setSelectedPropertyId}
+        onSelectProperty={handleSelectProperty}
         onEditProperty={handleEditProperty}
         onDeleteProperty={handleDeleteProperty}
       />
@@ -1431,8 +1457,8 @@ const App: React.FC = () => {
           <Route path="/" element={<HomeView />} />
           <Route path="/marketplace" element={<HomeView />} />
           <Route path="/saved" element={<FavouritesView />} />
-          <Route path="/dashboard" element={<DashboardView />} />
-          <Route path="/profile" element={
+          <Route path="/user/:userId/dashboard" element={<DashboardView />} />
+          <Route path="/user/:userId/profile" element={
             <ProfileSettings 
               user={user} 
               onUpdate={handleUpdateProfile} 
@@ -1445,8 +1471,9 @@ const App: React.FC = () => {
             />
           } />
           <Route path="/admin" element={<AdminConsole />} />
-          <Route path="/my-properties" element={<MyPropertiesWrapper />} />
-          <Route path="/properties/qrcode/:ownerId" element={<MyPropertiesWrapper />} />
+          <Route path="/user/:userId/my-properties" element={<MyPropertiesWrapper />} />
+          <Route path="/owner/:ownerId/properties" element={<MyPropertiesWrapper />} />
+          <Route path="/property/:propertyId" element={<HomeView />} />
           <Route path="/scan" element={
             <div className="min-h-[60vh] flex items-center justify-center">
               {isOwner ? (
@@ -1467,6 +1494,23 @@ const App: React.FC = () => {
               )}
             </div>
           } />
+          <Route path="*" element={
+            <div className="min-h-[60vh] flex flex-col items-center justify-center text-center px-4">
+              <div className="bg-rose-500/10 p-6 rounded-[3rem] mb-8 border border-rose-500/20">
+                <AlertCircle className="w-16 h-16 text-rose-500" />
+              </div>
+              <h2 className="text-3xl font-black mb-4">Page Not Found</h2>
+              <p className="text-slate-400 max-w-md mx-auto mb-10 leading-relaxed">
+                The resource you are looking for does not exist or has been moved.
+              </p>
+              <button 
+                onClick={() => navigate('/')}
+                className="bg-indigo-600 hover:bg-indigo-700 px-10 py-4 rounded-2xl font-black transition-all shadow-xl shadow-indigo-600/30"
+              >
+                Back to Home
+              </button>
+            </div>
+          } />
         </Routes>
       </AnimatePresence>
 
@@ -1474,7 +1518,7 @@ const App: React.FC = () => {
         {selectedProperty && (
           <PropertyDetails 
             property={selectedProperty} 
-            onClose={() => setSelectedPropertyId(null)}
+            onClose={() => handleSelectProperty(null)}
             isFavourite={favourites.includes(selectedProperty.id)}
             onToggleFavourite={handleToggleFavourite}
             allUsers={allUsers}

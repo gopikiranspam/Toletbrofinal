@@ -38,11 +38,11 @@ export const Layout: React.FC<LayoutProps> = ({ children, user, onLogout, onLogi
         <div className="hidden md:flex items-center gap-8 text-sm font-medium">
           {isOwner ? (
             <>
-              <NavLink to="/dashboard" className={navLinkClass}>
+              <NavLink to={`/user/${user.id}/dashboard`} className={navLinkClass}>
                 <LayoutDashboard className="w-4 h-4" />
                 Dashboard
               </NavLink>
-              <NavLink to="/my-properties" className={navLinkClass}>
+              <NavLink to={`/user/${user.id}/my-properties`} className={navLinkClass}>
                 <Package className="w-4 h-4" />
                 My Properties
               </NavLink>
@@ -50,7 +50,7 @@ export const Layout: React.FC<LayoutProps> = ({ children, user, onLogout, onLogi
                 <Home className="w-4 h-4" />
                 Marketplace
               </NavLink>
-              <NavLink to="/profile" className={navLinkClass}>
+              <NavLink to={`/user/${user.id}/profile`} className={navLinkClass}>
                 <ShieldCheck className="w-4 h-4" />
                 Smart Tolet Board
               </NavLink>
@@ -64,14 +64,14 @@ export const Layout: React.FC<LayoutProps> = ({ children, user, onLogout, onLogi
                 <Scan className="w-4 h-4" /> Scan QR
               </NavLink>
               {scannedOwnerId && (
-                <NavLink to={`/properties/qrcode/${scannedOwnerId}`} className={navLinkClass}>
+                <NavLink to={`/owner/${scannedOwnerId}/properties`} className={navLinkClass}>
                   <Package className="w-4 h-4" />
                   Owner Properties
                 </NavLink>
               )}
               {(!user || isFinder) && (
                 <NavLink 
-                  to="/dashboard" 
+                  to={user ? `/user/${user.id}/dashboard` : "/dashboard"} 
                   className={({ isActive }) => `flex items-center gap-2 transition-colors font-bold ${isActive ? 'text-indigo-400' : 'text-slate-400 hover:text-indigo-400'}`}
                 >
                   <PlusCircle className="w-4 h-4" /> List Property
@@ -87,7 +87,7 @@ export const Layout: React.FC<LayoutProps> = ({ children, user, onLogout, onLogi
           {/* List Property Link for Mobile Finder */}
           {(!user || isFinder) && (
             <button 
-              onClick={() => navigate('/dashboard')} 
+              onClick={() => navigate(user ? `/user/${user.id}/dashboard` : '/dashboard')} 
               className="md:hidden flex items-center gap-1.5 bg-indigo-600/10 text-indigo-400 px-3 py-1.5 rounded-full text-[10px] font-bold border border-indigo-500/20 active:scale-95 transition-all"
             >
               <PlusCircle className="w-3.5 h-3.5" />
@@ -105,8 +105,8 @@ export const Layout: React.FC<LayoutProps> = ({ children, user, onLogout, onLogi
           </NavLink>
 
           {user ? (
-            <div className="hidden md:flex items-center gap-2 cursor-pointer group" onClick={() => navigate('/profile')}>
-              <NavLink to="/profile" className={({ isActive }) => `w-9 h-9 rounded-xl border flex items-center justify-center transition-all ${isActive ? 'bg-indigo-600 border-indigo-500 shadow-lg shadow-indigo-600/20' : 'bg-slate-800 border-slate-700 group-hover:border-slate-500'}`}>
+            <div className="hidden md:flex items-center gap-2 cursor-pointer group" onClick={() => navigate(`/user/${user.id}/profile`)}>
+              <NavLink to={`/user/${user.id}/profile`} className={({ isActive }) => `w-9 h-9 rounded-xl border flex items-center justify-center transition-all ${isActive ? 'bg-indigo-600 border-indigo-500 shadow-lg shadow-indigo-600/20' : 'bg-slate-800 border-slate-700 group-hover:border-slate-500'}`}>
                 <UserIcon className="w-4.5 h-4.5 text-inherit" />
               </NavLink>
               <div className="flex flex-col">
@@ -132,7 +132,7 @@ export const Layout: React.FC<LayoutProps> = ({ children, user, onLogout, onLogi
 
           {/* Mobile Profile Link */}
           {!isOwner && (
-            <NavLink to="/profile" className="md:hidden p-2 text-slate-400">
+            <NavLink to={user ? `/user/${user.id}/profile` : "/profile"} className="md:hidden p-2 text-slate-400">
               {user ? <UserIcon className="w-5 h-5" /> : <UserIcon className="w-5 h-5 text-indigo-500" />}
             </NavLink>
           )}
@@ -148,11 +148,11 @@ export const Layout: React.FC<LayoutProps> = ({ children, user, onLogout, onLogi
       <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-slate-950/90 backdrop-blur-lg border-t border-slate-800 px-4 py-3 flex justify-between items-center z-50">
         {isOwner ? (
           <>
-            <NavLink to="/dashboard" className={mobileNavLinkClass}>
+            <NavLink to={`/user/${user.id}/dashboard`} className={mobileNavLinkClass}>
               <LayoutDashboard className="w-5 h-5" />
               <span className="text-[9px] font-medium">Dashboard</span>
             </NavLink>
-            <NavLink to="/my-properties" className={mobileNavLinkClass}>
+            <NavLink to={`/user/${user.id}/my-properties`} className={mobileNavLinkClass}>
               <Package className="w-5 h-5" />
               <span className="text-[9px] font-medium">My Props</span>
             </NavLink>
@@ -160,7 +160,7 @@ export const Layout: React.FC<LayoutProps> = ({ children, user, onLogout, onLogi
               <Home className="w-5 h-5" />
               <span className="text-[9px] font-medium">Market</span>
             </NavLink>
-            <NavLink to="/profile" className={mobileNavLinkClass}>
+            <NavLink to={`/user/${user.id}/profile`} className={mobileNavLinkClass}>
               <UserIcon className="w-5 h-5" />
               <span className="text-[9px] font-medium">Profile</span>
             </NavLink>
@@ -178,7 +178,7 @@ export const Layout: React.FC<LayoutProps> = ({ children, user, onLogout, onLogi
               <span className="text-[9px] font-medium">Scan</span>
             </NavLink>
             {scannedOwnerId ? (
-              <NavLink to={`/properties/qrcode/${scannedOwnerId}`} className={mobileNavLinkClass}>
+              <NavLink to={`/owner/${scannedOwnerId}/properties`} className={mobileNavLinkClass}>
                 <Package className="w-5 h-5" />
                 <span className="text-[9px] font-medium">Owner</span>
               </NavLink>
