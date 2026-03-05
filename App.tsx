@@ -78,17 +78,17 @@ const App: React.FC = () => {
 
   useEffect(() => {
     const handleRouting = () => {
-      const path = window.location.pathname;
+      const path = location.pathname;
       const match = path.match(/\/properties\/qrcode\/([a-zA-Z0-9_-]+)/i);
       if (match) {
         const ownerId = match[1];
         setScannedOwnerId(ownerId);
         setLastScannedQr(ownerId);
-        navigate(`/owner/${ownerId}/properties`);
+        navigate(`/owner/${ownerId}/properties`, { replace: true });
       }
     };
     handleRouting();
-  }, []);
+  }, [location.pathname, navigate]);
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
@@ -871,7 +871,6 @@ const App: React.FC = () => {
         setScannedOwnerId(ownerId);
         setLastScannedQr(ownerId);
         setQrStatus('valid');
-        navigate(`/properties/qrcode/${ownerId}`);
       } else {
         // Try as serial in users
         const q = query(collection(db, "users"), where("qrCode", "==", ownerId.toUpperCase()));
@@ -881,7 +880,7 @@ const App: React.FC = () => {
           setScannedOwnerId(foundOwnerId);
           setLastScannedQr(ownerId.toUpperCase());
           setQrStatus('valid');
-          navigate(`/properties/qrcode/${foundOwnerId}`);
+          ownerId = foundOwnerId; // Update ownerId for final navigation
         } else {
           // Check if it's a valid generated QR but not linked
           const qGen = query(collection(db, "properties"), where("code", "==", ownerId.toUpperCase()));
@@ -890,11 +889,9 @@ const App: React.FC = () => {
           if (systemQR) {
             setScannedOwnerId(ownerId.toUpperCase());
             setQrStatus('unlinked');
-            navigate(`/properties/qrcode/${ownerId.toUpperCase()}`);
           } else {
             setScannedOwnerId(ownerId);
             setQrStatus('invalid');
-            navigate(`/properties/qrcode/${ownerId}`);
           }
           setLastScannedQr(ownerId);
         }
@@ -1413,17 +1410,18 @@ const App: React.FC = () => {
   };
 
   const MyPropertiesWrapper = () => {
-    const { ownerId } = useParams();
+    const { ownerId, userId } = useParams();
     
     useEffect(() => {
-      if (ownerId && ownerId !== scannedOwnerId) {
-        setScannedOwnerId(ownerId);
-        setLastScannedQr(ownerId);
+      const id = ownerId || userId;
+      if (id && id !== scannedOwnerId) {
+        setScannedOwnerId(id);
+        setLastScannedQr(id);
       }
-    }, [ownerId]);
+    }, [ownerId, userId]);
 
-    const displayOwner = ownerId ? qrOwner : user;
-    const isOwnProfile = !!user && (!ownerId || user.id === ownerId);
+    const displayOwner = (ownerId || userId) ? qrOwner : user;
+    const isOwnProfile = !!user && (!ownerId || user.id === ownerId || user.id === userId);
 
     return (
       <MyProperties 
@@ -1457,6 +1455,12 @@ const App: React.FC = () => {
           <Route path="/" element={<HomeView />} />
           <Route path="/marketplace" element={<HomeView />} />
           <Route path="/saved" element={<FavouritesView />} />
+          
+          {/* Redirection routes for legacy/simplified paths */}
+          <Route path="/dashboard" element={<Navigate to={user ? `/user/${user.id}/dashboard` : "/"} replace />} />
+          <Route path="/profile" element={<Navigate to={user ? `/user/${user.id}/profile` : "/"} replace />} />
+          <Route path="/my-properties" element={<Navigate to={user ? `/user/${user.id}/my-properties` : "/"} replace />} />
+
           <Route path="/user/:userId/dashboard" element={<DashboardView />} />
           <Route path="/user/:userId/profile" element={
             <ProfileSettings 

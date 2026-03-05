@@ -70,12 +70,12 @@ export const Layout: React.FC<LayoutProps> = ({ children, user, onLogout, onLogi
                 </NavLink>
               )}
               {(!user || isFinder) && (
-                <NavLink 
-                  to={user ? `/user/${user.id}/dashboard` : "/dashboard"} 
-                  className={({ isActive }) => `flex items-center gap-2 transition-colors font-bold ${isActive ? 'text-indigo-400' : 'text-slate-400 hover:text-indigo-400'}`}
+                <button 
+                  onClick={() => user ? navigate(`/user/${user.id}/dashboard`) : onLoginClick?.()} 
+                  className="flex items-center gap-2 transition-colors font-bold text-slate-400 hover:text-indigo-400"
                 >
                   <PlusCircle className="w-4 h-4" /> List Property
-                </NavLink>
+                </button>
               )}
               {user?.type === UserType.ADMIN && <NavLink to="/admin" className={navLinkClass}>Admin Console</NavLink>}
             </>
@@ -87,7 +87,7 @@ export const Layout: React.FC<LayoutProps> = ({ children, user, onLogout, onLogi
           {/* List Property Link for Mobile Finder */}
           {(!user || isFinder) && (
             <button 
-              onClick={() => navigate(user ? `/user/${user.id}/dashboard` : '/dashboard')} 
+              onClick={() => user ? navigate(`/user/${user.id}/dashboard`) : onLoginClick?.()} 
               className="md:hidden flex items-center gap-1.5 bg-indigo-600/10 text-indigo-400 px-3 py-1.5 rounded-full text-[10px] font-bold border border-indigo-500/20 active:scale-95 transition-all"
             >
               <PlusCircle className="w-3.5 h-3.5" />
@@ -132,9 +132,12 @@ export const Layout: React.FC<LayoutProps> = ({ children, user, onLogout, onLogi
 
           {/* Mobile Profile Link */}
           {!isOwner && (
-            <NavLink to={user ? `/user/${user.id}/profile` : "/profile"} className="md:hidden p-2 text-slate-400">
+            <button 
+              onClick={() => user ? navigate(`/user/${user.id}/profile`) : onLoginClick?.()} 
+              className="md:hidden p-2 text-slate-400"
+            >
               {user ? <UserIcon className="w-5 h-5" /> : <UserIcon className="w-5 h-5 text-indigo-500" />}
-            </NavLink>
+            </button>
           )}
         </div>
       </nav>
@@ -210,7 +213,14 @@ export const Layout: React.FC<LayoutProps> = ({ children, user, onLogout, onLogi
             <h4 className="font-semibold text-sm md:text-base mb-4 md:mb-6"> Explore</h4>
             <ul className="space-y-3 md:space-y-4 text-xs md:text-sm text-slate-400">
               <li><Link to="/" className="hover:text-white transition-colors">Home</Link></li>
-              <li><Link to="/profile" className="hover:text-white transition-colors">Smart Tolet Board</Link></li>
+              <li>
+                <button 
+                  onClick={() => user ? navigate(`/user/${user.id}/profile`) : onLoginClick?.()} 
+                  className="hover:text-white transition-colors"
+                >
+                  Smart Tolet Board
+                </button>
+              </li>
               <li><button className="hover:text-white transition-colors">Property Management</button></li>
               <li><button className="hover:text-white transition-colors">Virtual Tours</button></li>
             </ul>
