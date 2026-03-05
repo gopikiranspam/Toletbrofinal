@@ -46,6 +46,25 @@ export const PropertyDetails: React.FC<PropertyDetailsProps> = ({
     setAcknowledged(false);
   };
 
+  const handleShare = async () => {
+    const shareData = {
+      title: property.title,
+      text: `Check out this property: ${property.title} in ${property.locality}, ${property.city}`,
+      url: window.location.href,
+    };
+
+    try {
+      if (navigator.share) {
+        await navigator.share(shareData);
+      } else {
+        await navigator.clipboard.writeText(window.location.href);
+        alert('Link copied to clipboard!');
+      }
+    } catch (err) {
+      console.error('Error sharing:', err);
+    }
+  };
+
   return (
     <motion.div 
       initial={{ opacity: 0 }}
@@ -64,7 +83,7 @@ export const PropertyDetails: React.FC<PropertyDetailsProps> = ({
           <h2 className="text-xs font-black tracking-widest uppercase text-slate-300">Verified Listing</h2>
         </div>
         <div className="flex items-center gap-2">
-          <button className="p-2 md:p-2.5 bg-white/5 rounded-xl text-slate-300 hover:text-indigo-400 transition-all"><Share2 className="w-3.5 md:w-4 h-3.5 md:h-4" /></button>
+          <button onClick={handleShare} className="p-2 md:p-2.5 bg-white/5 rounded-xl text-slate-300 hover:text-indigo-400 transition-all"><Share2 className="w-3.5 md:w-4 h-3.5 md:h-4" /></button>
           <button 
             onClick={() => onToggleFavourite(property.id)}
             className={`p-2 md:p-2.5 rounded-xl transition-all border ${isFavourite ? 'bg-rose-500/10 border-rose-500/30 text-rose-500' : 'bg-white/5 border-white/5 text-slate-300 hover:text-rose-500'}`}

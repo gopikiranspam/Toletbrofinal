@@ -861,70 +861,71 @@ const App: React.FC = () => {
       serial = code.toUpperCase();
     }
 
-    if (ownerId) {
-      // Check if ownerId is actually a UID or a serial
-      const userRef = doc(db, 'users', ownerId);
-      const userDoc = await getDoc(userRef);
-      if (userDoc.exists()) {
-        setScannedOwnerId(ownerId);
-        setLastScannedQr(ownerId);
-        setQrStatus('valid');
-      } else {
-        // Try as serial in users
-        const q = query(collection(db, "users"), where("qrCode", "==", ownerId.toUpperCase()));
+    let finalOwnerId = ownerId;
+    if (!finalOwnerId && serial) {
+      // Try to find owner by serial
+      try {
+        const q = query(collection(db, "users"), where("qrCode", "==", serial));
         const querySnapshot = await getDocs(q);
         if (!querySnapshot.empty) {
-          const foundOwnerId = querySnapshot.docs[0].id;
-          setScannedOwnerId(foundOwnerId);
-          setLastScannedQr(ownerId.toUpperCase());
-          setQrStatus('valid');
-          ownerId = foundOwnerId; // Update ownerId for final navigation
-        } else {
-          // Check if it's a valid generated QR but not linked
-          const qGen = query(collection(db, "properties"), where("code", "==", ownerId.toUpperCase()));
-          const genSnapshot = await getDocs(qGen);
-          const systemQR = genSnapshot.docs.find(d => d.data().isSystemQR);
-          if (systemQR) {
-            setScannedOwnerId(ownerId.toUpperCase());
-            setQrStatus('unlinked');
-          } else {
-            setScannedOwnerId(ownerId);
-            setQrStatus('invalid');
-          }
-          setLastScannedQr(ownerId);
+          finalOwnerId = querySnapshot.docs[0].id;
         }
+      } catch (error) {
+        console.error("Error finding owner by serial:", error);
       }
-      setIsQrInvalid(false);
-      setIsScanning(false);
-      navigate(`/owner/${ownerId}/properties`);
-      setIsNearbyActive(false);
-      setSearchQuery(''); 
-    } else if (serial) {
-      const q = query(collection(db, "users"), where("qrCode", "==", serial));
-      const querySnapshot = await getDocs(q);
-      if (!querySnapshot.empty) {
-        setScannedOwnerId(querySnapshot.docs[0].id);
-        setQrStatus('valid');
-      } else {
-        // Check if it's a valid generated QR but not linked
-        const qGen = query(collection(db, "properties"), where("code", "==", serial));
-        const genSnapshot = await getDocs(qGen);
-        const systemQR = genSnapshot.docs.find(d => d.data().isSystemQR);
-        if (systemQR) {
-          setScannedOwnerId(serial);
-          setQrStatus('unlinked');
-        } else {
-          setScannedOwnerId(serial);
-          setQrStatus('invalid');
-        }
-      }
-      setSearchQuery('');
-      setLastScannedQr(serial);
-      setIsQrInvalid(false);
-      setIsScanning(false);
-      navigate(`/owner/${serial}/properties`);
-      setIsNearbyActive(false);
     }
+
+    if (finalOwnerId) {
+      const ownerProperties = properties.filter(p => p.ownerId === finalOwnerId && p.status !== 'occupied');
+      
+      setScannedOwnerId(finalOwnerId);
+      setLastScannedQr(serial || finalOwnerId);
+      setQrStatus('valid');
+      setIsQrInvalid(false);
+      setIsScanning(false);
+      setIsNearbyActive(false);
+      setSearchQuery('');
+
+      if (ownerProperties.length === 1) {
+        navigate(`/property/${ownerProperties[0].id}`);
+      } else {
+        navigate(`/owner/${finalOwnerId}/properties`);
+      }
+    } else if (serial) {
+      // Check if it's a valid generated QR but not linked
+      const qGen = query(collection(db, "properties"), where("code", "==", serial));
+      const genSnapshot = await getDocs(qGen);
+      const systemQR = genSnapshot.docs.find(d => d.data().isSystemQR);
+      
+      setLastScannedQr(serial);
+      setScannedOwnerId(serial);
+      setSearchQuery('');
+      setIsScanning(false);
+      setIsNearbyActive(false);
+
+      if (systemQR) {
+        setQrStatus('unlinked');
+        setIsQrInvalid(false);
+        navigate(`/owner/${serial}/properties`);
+      } else {
+        setQrStatus('invalid');
+        setIsQrInvalid(true);
+        navigate('/');
+      }
+    }
+  };
+
+  const handleSearch = async () => {
+    const queryStr = searchQuery.trim().toUpperCase();
+    if (!queryStr) return;
+
+    // Check if it's a S.No format
+    if (/^[A-Z]{3}\d{3}$/.test(queryStr)) {
+      handleScan(queryStr);
+      return;
+    }
+
+    // Normal search is handled by filteredProperties memo
   };
 
   const closeScanner = () => {
@@ -1004,7 +1005,7 @@ const App: React.FC = () => {
                 <button onClick={() => setIsScanning(true)} className="flex-1 md:flex-none flex items-center justify-center gap-2 bg-slate-800 hover:bg-slate-700 px-4 md:px-6 py-3 md:py-4 rounded-2xl font-medium transition-colors border border-slate-700">
                   <QrIcon className="w-4 md:w-5 h-4 md:h-5 text-indigo-500" /><span className="md:hidden text-xs">Scan QR</span>
                 </button>
-                <button className="flex-1 md:flex-none bg-indigo-600 hover:bg-indigo-700 px-6 md:px-10 py-3 md:py-4 rounded-2xl font-semibold text-xs md:text-sm transition-all shadow-lg shadow-indigo-500/20">Search</button>
+                <button onClick={handleSearch} className="flex-1 md:flex-none bg-indigo-600 hover:bg-indigo-700 px-6 md:px-10 py-3 md:py-4 rounded-2xl font-semibold text-xs md:text-sm transition-all shadow-lg shadow-indigo-500/20">Search</button>
               </div>
             </div>
           </div>

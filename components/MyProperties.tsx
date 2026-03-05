@@ -69,24 +69,45 @@ export const MyProperties: React.FC<MyPropertiesProps> = ({
           </div>
         </div>
 
-        {!isOwnProfile && (
-          <div className="flex flex-wrap gap-3">
-            <a 
-              href={`tel:${owner.phone}`}
-              className="flex items-center gap-2 bg-slate-900 hover:bg-slate-800 px-5 py-3 rounded-2xl text-sm font-bold border border-slate-800 transition-all"
-            >
-              <Phone className="w-4 h-4 text-indigo-400" />
-              Call Owner
-            </a>
-            <a 
-              href={`https://wa.me/${owner.phone.replace(/\D/g, '')}`}
-              className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 px-5 py-3 rounded-2xl text-sm font-bold transition-all shadow-lg shadow-emerald-600/20"
-            >
-              <MessageCircle className="w-4 h-4" />
-              WhatsApp
-            </a>
-          </div>
-        )}
+        <div className="flex flex-wrap gap-3">
+          <button 
+            onClick={() => {
+              const url = `${window.location.origin}/owner/${owner.id}/properties`;
+              if (navigator.share) {
+                navigator.share({
+                  title: `${owner.name}'s Properties`,
+                  text: `Check out properties listed by ${owner.name} on ToletBro`,
+                  url: url
+                });
+              } else {
+                navigator.clipboard.writeText(url);
+                alert('Profile link copied to clipboard!');
+              }
+            }}
+            className="flex items-center gap-2 bg-white/5 hover:bg-white/10 px-5 py-3 rounded-2xl text-sm font-bold border border-white/5 transition-all text-slate-300"
+          >
+            <QrCode className="w-4 h-4 text-indigo-400" />
+            Share Profile
+          </button>
+          {!isOwnProfile && (
+            <>
+              <a 
+                href={`tel:${owner.phone}`}
+                className="flex items-center gap-2 bg-slate-900 hover:bg-slate-800 px-5 py-3 rounded-2xl text-sm font-bold border border-slate-800 transition-all"
+              >
+                <Phone className="w-4 h-4 text-indigo-400" />
+                Call Owner
+              </a>
+              <a 
+                href={`https://wa.me/${owner.phone.replace(/\D/g, '')}`}
+                className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 px-5 py-3 rounded-2xl text-sm font-bold transition-all shadow-lg shadow-emerald-600/20"
+              >
+                <MessageCircle className="w-4 h-4" />
+                WhatsApp
+              </a>
+            </>
+          )}
+        </div>
       </div>
 
       {/* Owner Info Card (for finders) */}
