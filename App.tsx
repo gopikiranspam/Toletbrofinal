@@ -51,6 +51,7 @@ const App: React.FC = () => {
   const [searchType, setSearchType] = useState<'rent' | 'buy'>('rent');
   const [isScanning, setIsScanning] = useState(false);
   const [properties, setProperties] = useState<Property[]>([]);
+  const [isPropertiesLoading, setIsPropertiesLoading] = useState(true);
   const [allUsers, setAllUsers] = useState<User[]>(MOCK_USERS);
   const [selectedPropertyId, setSelectedPropertyId] = useState<string | null>(null);
   const [favourites, setFavourites] = useState<string[]>([]);
@@ -68,13 +69,8 @@ const App: React.FC = () => {
   const propertyId = propertyMatch?.params.propertyId;
 
   useEffect(() => {
-    if (propertyId) {
-      setSelectedPropertyId(propertyId);
-    } else if (location.pathname.startsWith('/property/')) {
-       // Handle case where path is just /property/
-       setSelectedPropertyId(null);
-    }
-  }, [propertyId, location.pathname]);
+    setSelectedPropertyId(propertyId || null);
+  }, [propertyId]);
 
   useEffect(() => {
     const handleRouting = () => {
@@ -227,7 +223,9 @@ const App: React.FC = () => {
         // If collection is empty, use mock data as fallback
         setProperties(MOCK_PROPERTIES);
       }
+      setIsPropertiesLoading(false);
     }, (error: any) => {
+      setIsPropertiesLoading(false);
       if (error.code === 'permission-denied') {
         console.warn("Firestore read permission denied for properties collection. Falling back to mock data. Please check your Firestore Security Rules.");
         setProperties(MOCK_PROPERTIES);
@@ -1516,6 +1514,45 @@ const App: React.FC = () => {
             </div>
           } />
         </Routes>
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {propertyId && isPropertiesLoading && (
+          <div className="fixed inset-0 z-[200] bg-slate-950 flex items-center justify-center">
+            <div className="flex flex-col items-center gap-4">
+              <Loader2 className="w-12 h-12 text-indigo-500 animate-spin" />
+              <p className="text-slate-400 font-bold animate-pulse uppercase tracking-widest text-[10px]">Loading Property Details...</p>
+            </div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {propertyId && !isPropertiesLoading && !selectedProperty && (
+          <div className="fixed inset-0 z-[200] bg-slate-950 flex items-center justify-center p-4">
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.9 }}
+              animate={{ opacity: 1, scale: 1 }}
+              className="bg-slate-900 border border-slate-800 p-8 rounded-[2.5rem] text-center space-y-6 max-w-lg w-full shadow-2xl"
+            >
+              <div className="w-20 h-20 bg-rose-500/10 rounded-full flex items-center justify-center mx-auto">
+                <AlertCircle className="w-10 h-10 text-rose-500" />
+              </div>
+              <div className="space-y-2">
+                <h3 className="text-2xl font-bold text-white">Property Not Found</h3>
+                <p className="text-slate-400 text-sm leading-relaxed">
+                  The property you are looking for might have been removed or the link is incorrect.
+                </p>
+              </div>
+              <button 
+                onClick={() => navigate('/')}
+                className="w-full bg-indigo-600 hover:bg-indigo-700 py-4 rounded-2xl text-xs font-black uppercase tracking-widest transition-all shadow-lg shadow-indigo-600/20"
+              >
+                Back to Marketplace
+              </button>
+            </motion.div>
+          </div>
+        )}
       </AnimatePresence>
 
       <AnimatePresence>

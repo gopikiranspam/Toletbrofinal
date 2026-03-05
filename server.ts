@@ -2,17 +2,25 @@ import express from "express";
 import { createServer as createViteServer } from "vite";
 import axios from "axios";
 import dotenv from "dotenv";
+import path from "path";
+import { fileURLToPath } from "url";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 dotenv.config();
 
 async function startServer() {
+  console.log("Starting server initialization...");
   const app = express();
   const PORT = 3000;
 
   app.use(express.json());
+  console.log("Express middleware configured");
 
   // Google Geocoding API Proxy
   app.get("/api/geocode/reverse", async (req, res) => {
+    console.log("Reverse geocode request received");
     const { lat, lng } = req.query;
     const apiKey = process.env.GOOGLE_MAPS_API_KEY;
 
@@ -32,6 +40,7 @@ async function startServer() {
   });
 
   app.get("/api/geocode/forward", async (req, res) => {
+    console.log("Forward geocode request received");
     const { address } = req.query;
     const apiKey = process.env.GOOGLE_MAPS_API_KEY;
 
@@ -52,16 +61,28 @@ async function startServer() {
 
   // Vite middleware for development
   if (process.env.NODE_ENV !== "production") {
-    const vite = await createViteServer({
-      server: { middlewareMode: true },
-      appType: "spa",
-    });
-    app.use(vite.middlewares);
+    console.log("Initializing Vite in middleware mode...");
+    try {
+      const vite = await createViteServer({
+        server: { middlewareMode: true },
+        appType: "spa",
+        root: __dirname,
+      });
+      
+      // Use vite's connect instance as middleware
+      app.use(vite.middlewares);
+      console.log("Vite middleware loaded successfully");
+    } catch (err) {
+      console.error("Failed to initialize Vite server:", err);
+      throw err;
+    }
   } else {
-    app.use(express.static("dist"));
-    app.get("*", (req, res) => {
-      res.sendFile("dist/index.html", { root: "." });
+    const distPath = path.join(__dirname, "dist");
+    app.use(express.static(distPath));
+    app.get("(.*)", (req, res) => {
+      res.sendFile(path.join(distPath, "index.html"));
     });
+    console.log("Serving static files from dist");
   }
 
   app.listen(PORT, "0.0.0.0", () => {
@@ -69,4 +90,7 @@ async function startServer() {
   });
 }
 
-startServer();
+startServer().catch(err => {
+  console.error("Failed to start server:", err);
+  process.exit(1);
+});
