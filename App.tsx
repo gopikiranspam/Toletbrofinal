@@ -135,28 +135,19 @@ const App: React.FC = () => {
     const fetchOwner = async () => {
       setIsOwnerLoading(true);
       try {
-        const userRef = doc(db, 'users', scannedOwnerId);
-        const userDoc = await getDoc(userRef);
-        if (userDoc.exists()) {
-          const userData = { ...userDoc.data(), id: userDoc.id } as User;
-          // Add to allUsers if not present
+        // Try API first to avoid permission issues
+        const response = await fetch(`/api/owner/lookup?serial=${encodeURIComponent(scannedOwnerId)}`);
+        if (response.ok) {
+          const data = await response.json();
+          const userData = data.owner;
           setAllUsers(prev => prev.find(u => u.id === userData.id) ? prev : [...prev, userData]);
         } else {
-          // Fallback: check if scannedOwnerId is actually a qrCode (serial)
-          // This requires 'list' permissions which might be restricted
-          try {
-            const q = query(collection(db, "users"), where("qrCode", "==", scannedOwnerId.toUpperCase()));
-            const querySnapshot = await getDocs(q);
-            if (!querySnapshot.empty) {
-              const userData = { ...querySnapshot.docs[0].data(), id: querySnapshot.docs[0].id } as User;
-              setAllUsers(prev => prev.find(u => u.id === userData.id) ? prev : [...prev, userData]);
-            }
-          } catch (innerError: any) {
-            if (innerError.code === 'permission-denied') {
-              console.warn("Permission denied for serial lookup. Ensure 'list' is allowed on users collection for qrCode queries.");
-            } else {
-              throw innerError;
-            }
+          // Fallback to client-side
+          const userRef = doc(db, 'users', scannedOwnerId);
+          const userDoc = await getDoc(userRef);
+          if (userDoc.exists()) {
+            const userData = { ...userDoc.data(), id: userDoc.id } as User;
+            setAllUsers(prev => prev.find(u => u.id === userData.id) ? prev : [...prev, userData]);
           }
         }
       } catch (error: any) {
@@ -179,16 +170,23 @@ const App: React.FC = () => {
       if (allUsers.find(u => u.qrCode?.toUpperCase() === normalizedSearchQuery)) return;
 
       try {
-        const q = query(collection(db, "users"), where("qrCode", "==", normalizedSearchQuery));
-        const querySnapshot = await getDocs(q);
-        if (!querySnapshot.empty) {
-          const userData = { ...querySnapshot.docs[0].data(), id: querySnapshot.docs[0].id } as User;
+        // Try API first
+        const response = await fetch(`/api/owner/lookup?serial=${encodeURIComponent(normalizedSearchQuery)}`);
+        if (response.ok) {
+          const data = await response.json();
+          const userData = data.owner;
           setAllUsers(prev => prev.find(u => u.id === userData.id) ? prev : [...prev, userData]);
+        } else {
+          // Fallback to client-side
+          const q = query(collection(db, "users"), where("qrCode", "==", normalizedSearchQuery));
+          const querySnapshot = await getDocs(q);
+          if (!querySnapshot.empty) {
+            const userData = { ...querySnapshot.docs[0].data(), id: querySnapshot.docs[0].id } as User;
+            setAllUsers(prev => prev.find(u => u.id === userData.id) ? prev : [...prev, userData]);
+          }
         }
       } catch (error: any) {
-        if (error.code === 'permission-denied') {
-          console.warn("Permission denied for serial lookup. Falling back to local data.");
-        } else {
+        if (error.code !== 'permission-denied') {
           console.error("Error fetching owner by serial:", error);
         }
       }
@@ -748,15 +746,24 @@ const App: React.FC = () => {
 
     const fetchPropertyOwner = async () => {
       try {
-        const userRef = doc(db, 'users', selectedProperty.ownerId);
-        const userDoc = await getDoc(userRef);
-        if (userDoc.exists()) {
-          const userData = { ...userDoc.data(), id: userDoc.id } as User;
+        // Try API first to avoid permission issues
+        const response = await fetch(`/api/owner/lookup?serial=${encodeURIComponent(selectedProperty.ownerId)}`);
+        if (response.ok) {
+          const data = await response.json();
+          const userData = data.owner;
           setAllUsers(prev => prev.find(u => u.id === userData.id) ? prev : [...prev, userData]);
+        } else {
+          // Fallback to client-side
+          const userRef = doc(db, 'users', selectedProperty.ownerId);
+          const userDoc = await getDoc(userRef);
+          if (userDoc.exists()) {
+            const userData = { ...userDoc.data(), id: userDoc.id } as User;
+            setAllUsers(prev => prev.find(u => u.id === userData.id) ? prev : [...prev, userData]);
+          }
         }
       } catch (error: any) {
         if (error.code === 'permission-denied') {
-          console.warn("Permission denied fetching property owner. This is likely due to Firestore Security Rules. Falling back to mock data if available.");
+          console.warn("Permission denied fetching property owner. Falling back to client-side lookup.");
         } else {
           console.error("Error fetching property owner:", error);
         }
@@ -834,52 +841,85 @@ const App: React.FC = () => {
         const match = url.pathname.match(/\/q\/([a-zA-Z0-9_-]+)/i) || 
                       url.pathname.match(/\/properties\/qrcode\/([a-zA-Z0-9_-]+)/i) ||
                       url.pathname.match(/\/owner\/([a-zA-Z0-9_-]+)\/properties/i) ||
-                      url.pathname.match(/\/user\/([a-zA-Z0-9_-]+)\/my-properties/i);
+                      url.pathname.match(/\/user\/([a-zA-Z0-9_-]+)\/my-properties/i) ||
+                      url.pathname.match(/\/property\/([a-zA-Z0-9_-]+)/i);
         
         if (match) {
-          serial = match[1].toUpperCase();
+          serial = match[1];
         } else {
           // Fallback: get the last part of the path
           const parts = url.pathname.split('/').filter(Boolean);
-          serial = parts[parts.length - 1]?.toUpperCase() || '';
+          serial = parts[parts.length - 1] || '';
         }
       } else {
-        serial = code.toUpperCase();
+        serial = code;
       }
     } catch (e) {
-      serial = code.toUpperCase();
+      serial = code;
     }
 
     if (!serial) return;
+    const upperSerial = serial.toUpperCase();
 
     // Reset states
     setQrStatus(null);
     setIsQrInvalid(false);
 
     let linkedOwner: User | null = null;
+    let ownerProperties: any[] = [];
+
     try {
-      const q = query(collection(db, "users"), where("qrCode", "==", serial));
-      const querySnapshot = await getDocs(q);
-      if (!querySnapshot.empty) {
-        linkedOwner = { ...querySnapshot.docs[0].data(), id: querySnapshot.docs[0].id } as User;
-        // Add to allUsers immediately for UI responsiveness
-        setAllUsers(prev => prev.find(u => u.id === linkedOwner!.id) ? prev : [...prev, linkedOwner!]);
+      const response = await fetch(`/api/owner/lookup?serial=${encodeURIComponent(serial)}`);
+      if (response.ok) {
+        const data = await response.json();
+        linkedOwner = data.owner;
+        ownerProperties = data.properties || [];
+        
+        if (linkedOwner) {
+          setAllUsers(prev => prev.find(u => u.id === linkedOwner!.id) ? prev : [...prev, linkedOwner!]);
+        }
+      } else if (response.status !== 404) {
+        console.error("Server error during owner lookup:", await response.text());
       }
     } catch (error) {
-      console.error("Error finding owner by serial:", error);
+      console.error("Error finding owner by serial/id via API:", error);
+      
+      // Fallback to client-side if API fails (though it might hit permission errors)
+      try {
+        const q = query(collection(db, "users"), where("qrCode", "==", upperSerial));
+        const querySnapshot = await getDocs(q);
+        
+        if (!querySnapshot.empty) {
+          linkedOwner = { ...querySnapshot.docs[0].data(), id: querySnapshot.docs[0].id } as User;
+        } else {
+          const userRef = doc(db, "users", serial);
+          const userSnap = await getDoc(userRef);
+          if (userSnap.exists()) {
+            linkedOwner = { ...userSnap.data(), id: userSnap.id } as User;
+          }
+        }
+
+        if (linkedOwner) {
+          setAllUsers(prev => prev.find(u => u.id === linkedOwner!.id) ? prev : [...prev, linkedOwner!]);
+          
+          // Fetch properties for this owner directly from Firestore for reliability
+          const propsQuery = query(
+            collection(db, "properties"), 
+            where("ownerId", "==", linkedOwner.id),
+            where("status", "==", "active")
+          );
+          const propsSnap = await getDocs(propsQuery);
+          ownerProperties = propsSnap.docs
+            .map(doc => ({ id: doc.id, ...doc.data() }))
+            .filter((p: any) => !p.isSystemQR);
+        }
+      } catch (clientError) {
+        console.error("Fallback client-side lookup also failed:", clientError);
+      }
     }
 
     if (linkedOwner) {
       const linkedOwnerId = linkedOwner.id;
-      // Fetch properties for this owner directly from Firestore for reliability
-      const propsQuery = query(
-        collection(db, "properties"), 
-        where("ownerId", "==", linkedOwnerId),
-        where("status", "==", "active")
-      );
-      const propsSnap = await getDocs(propsQuery);
-      const ownerProperties = propsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      
       setScannedOwnerId(linkedOwnerId);
       setLastScannedQr(serial);
       setQrStatus('valid');
@@ -899,7 +939,7 @@ const App: React.FC = () => {
       }
     } else {
       // Check if it's a Property QR (linked directly to a property)
-      const qProp = query(collection(db, "properties"), where("code", "==", serial));
+      const qProp = query(collection(db, "properties"), where("code", "==", upperSerial));
       const propSnapshot = await getDocs(qProp);
       
       if (!propSnapshot.empty) {
@@ -918,7 +958,6 @@ const App: React.FC = () => {
         } else {
           const ownerId = propertyData.ownerId;
           if (!ownerId) {
-            // This shouldn't happen if isSystemQR is false, but safety first
             setQrStatus('invalid');
             navigate('/', { replace: true });
             return;
@@ -931,7 +970,9 @@ const App: React.FC = () => {
             where("status", "==", "active")
           );
           const propsSnap = await getDocs(propsQuery);
-          const ownerProperties = propsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+          const ownerProperties = propsSnap.docs
+            .map(doc => ({ id: doc.id, ...doc.data() }))
+            .filter((p: any) => !p.isSystemQR);
 
           setScannedOwnerId(ownerId);
           setQrStatus('valid');
@@ -948,11 +989,22 @@ const App: React.FC = () => {
             const targetUrl = `/user/${ownerId}/my-properties`;
             navigate(targetUrl, { replace: true });
           } else {
-            // No active properties, show the owner profile view in Home
             navigate('/', { replace: true });
           }
         }
       } else {
+        // One last check: maybe it's a direct property ID
+        const propRef = doc(db, "properties", serial);
+        const propSnap = await getDoc(propRef);
+        if (propSnap.exists()) {
+          const propData = { id: propSnap.id, ...propSnap.data() } as Property;
+          if (!propData.isSystemQR) {
+            navigate(`/property/${propSnap.id}`, { replace: true });
+            setIsScanning(false);
+            return;
+          }
+        }
+
         setLastScannedQr(serial);
         setScannedOwnerId(serial);
         setSearchQuery('');
@@ -975,17 +1027,18 @@ const App: React.FC = () => {
       
       // Match /q/SERIAL, /properties/qrcode/SERIAL, or just /SERIAL if it looks like a serial
       const match = path.match(/\/q\/([a-zA-Z0-9_-]+)/i) || 
-                    path.match(/\/properties\/qrcode\/([a-zA-Z0-9_-]+)/i);
+                    path.match(/\/properties\/qrcode\/([a-zA-Z0-9_-]+)/i) ||
+                    path.match(/\/property\/([a-zA-Z0-9_-]+)/i);
       
       if (match) {
         const serial = match[1];
         if (serial !== lastScannedQr) {
           handleScan(serial);
         }
-      } else if (path.length === 7 && path.startsWith('/')) {
-        // Handle /ABC123 pattern
-        const potentialSerial = path.substring(1).toUpperCase();
-        if (/^[A-Z]{3}\d{3}$/.test(potentialSerial) && potentialSerial !== lastScannedQr) {
+      } else if (path.length >= 7 && path.startsWith('/')) {
+        // Handle /ABC123 or /USER_ID pattern
+        const potentialSerial = path.substring(1);
+        if (potentialSerial !== lastScannedQr && !['admin', 'profile', 'search', 'login'].includes(potentialSerial.toLowerCase())) {
           handleScan(potentialSerial);
         }
       }
