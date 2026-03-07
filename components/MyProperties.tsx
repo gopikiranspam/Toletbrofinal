@@ -155,7 +155,7 @@ export const MyProperties: React.FC<MyPropertiesProps> = ({
       {filteredProperties.length === 0 && (
         <div className="py-20 text-center bg-slate-900/30 rounded-3xl border border-dashed border-slate-800">
           <Package className="w-12 h-12 text-slate-700 mx-auto mb-4" />
-          <h3 className="text-xl font-bold text-slate-400">No properties listed yet</h3>
+          <h3 className="text-xl font-bold text-slate-400">No properties posted yet</h3>
           <p className="text-slate-500 text-sm mt-2">Check back later for updates.</p>
         </div>
       )}

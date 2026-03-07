@@ -288,9 +288,12 @@ export const ProfileSettings: React.FC<ProfileSettingsProps> = ({
                         try {
                           if (code.startsWith('http')) {
                             const url = new URL(code);
-                            const match = url.pathname.match(/\/properties\/qrcode\/([a-zA-Z0-9_-]+)/i);
+                            const match = url.pathname.match(/\/q\/([a-zA-Z0-9_-]+)/i) || 
+                                          url.pathname.match(/\/properties\/qrcode\/([a-zA-Z0-9_-]+)/i);
                             if (match) {
                               serial = match[1];
+                            } else {
+                              serial = url.pathname.split('/').pop() || code;
                             }
                           }
                         } catch (e) {

@@ -23,7 +23,7 @@ export const generateStandardQRImage = async (id: string, label: string): Promis
   ctx.fillStyle = '#FFFFFF';
   ctx.fillRect(0, 0, canvas.width, canvas.height);
   
-  // URL format: https://www.toletbro.com/properties/qrcode/{id}
+  // URL format: https://www.toletbro.com/q/{id}
   const qrUrl = `${QR_BASE_URL}/${id}`;
   
   // Generate QR Data URL with high error correction

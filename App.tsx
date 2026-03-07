@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { BrowserRouter, Routes, Route, useNavigate, useLocation, useParams, Navigate, useMatch } from 'react-router-dom';
 import { Auth } from './components/Auth';
 import { Layout } from './components/Layout';
@@ -71,20 +71,6 @@ const App: React.FC = () => {
   useEffect(() => {
     setSelectedPropertyId(propertyId || null);
   }, [propertyId]);
-
-  useEffect(() => {
-    const handleRouting = () => {
-      const path = location.pathname;
-      const match = path.match(/\/properties\/qrcode\/([a-zA-Z0-9_-]+)/i);
-      if (match) {
-        const ownerId = match[1];
-        setScannedOwnerId(ownerId);
-        setLastScannedQr(ownerId);
-        navigate(`/owner/${ownerId}/properties`, { replace: true });
-      }
-    };
-    handleRouting();
-  }, [location.pathname, navigate]);
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
@@ -771,13 +757,97 @@ const App: React.FC = () => {
     fetchPropertyOwner();
   }, [selectedPropertyId, allUsers.length]);
 
-  if (isAuthLoading) {
-    return (
-      <div className="min-h-screen bg-slate-950 flex items-center justify-center">
-        <Loader2 className="w-8 h-8 text-indigo-500 animate-spin" />
-      </div>
-    );
-  }
+  const handleScan = useCallback(async (code: string) => {
+    let serial = '';
+    try {
+      if (code.startsWith('http')) {
+        const url = new URL(code);
+        const match = url.pathname.match(/\/q\/([a-zA-Z0-9_-]+)/i) || 
+                      url.pathname.match(/\/properties\/qrcode\/([a-zA-Z0-9_-]+)/i) ||
+                      url.pathname.match(/\/owner\/([a-zA-Z0-9_-]+)\/properties/i);
+        if (match) {
+          serial = match[1].toUpperCase();
+        } else {
+          serial = url.pathname.split('/').pop()?.toUpperCase() || '';
+        }
+      } else {
+        serial = code.toUpperCase();
+      }
+    } catch (e) {
+      serial = code.toUpperCase();
+    }
+
+    if (!serial) return;
+
+    let linkedOwnerId = '';
+    try {
+      const q = query(collection(db, "users"), where("qrCode", "==", serial));
+      const querySnapshot = await getDocs(q);
+      if (!querySnapshot.empty) {
+        linkedOwnerId = querySnapshot.docs[0].id;
+      }
+    } catch (error) {
+      console.error("Error finding owner by serial:", error);
+    }
+
+    if (linkedOwnerId) {
+      // Fetch properties for this owner directly from Firestore for reliability
+      const propsQuery = query(
+        collection(db, "properties"), 
+        where("ownerId", "==", linkedOwnerId),
+        where("status", "==", "active")
+      );
+      const propsSnap = await getDocs(propsQuery);
+      const ownerProperties = propsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      
+      setScannedOwnerId(linkedOwnerId);
+      setLastScannedQr(serial);
+      setQrStatus('valid');
+      setIsQrInvalid(false);
+      setIsScanning(false);
+      setIsNearbyActive(false);
+      setSearchQuery('');
+
+      if (ownerProperties.length === 1) {
+        navigate(`/property/${ownerProperties[0].id}`, { replace: true });
+      } else {
+        navigate(`/owner/${linkedOwnerId}/properties`, { replace: true });
+      }
+    } else {
+      const qGen = query(collection(db, "properties"), where("code", "==", serial));
+      const genSnapshot = await getDocs(qGen);
+      const systemQR = genSnapshot.docs.find(d => d.data().isSystemQR);
+      
+      setLastScannedQr(serial);
+      setScannedOwnerId(serial);
+      setSearchQuery('');
+      setIsScanning(false);
+      setIsNearbyActive(false);
+
+      if (systemQR) {
+        setQrStatus('unlinked');
+        setIsQrInvalid(false);
+        navigate(`/owner/${serial}/properties`, { replace: true });
+      } else {
+        setQrStatus('invalid');
+        setIsQrInvalid(true);
+        navigate('/', { replace: true });
+      }
+    }
+  }, [navigate]);
+
+  useEffect(() => {
+    const handleRouting = () => {
+      const path = location.pathname;
+      const match = path.match(/\/q\/([a-zA-Z0-9_-]+)/i) || path.match(/\/properties\/qrcode\/([a-zA-Z0-9_-]+)/i);
+      if (match) {
+        const serial = match[1];
+        handleScan(serial);
+      }
+    };
+    handleRouting();
+  }, [location.pathname, handleScan]);
+
 
   const isOwner = user?.type === UserType.OWNER;
   const isFinder = user?.type === UserType.FINDER;
@@ -838,79 +908,6 @@ const App: React.FC = () => {
         navigate(-1);
       } else {
         setSelectedPropertyId(null);
-      }
-    }
-  };
-
-  const handleScan = async (code: string) => {
-    let ownerId = '';
-    let serial = '';
-    try {
-      if (code.startsWith('http')) {
-        const url = new URL(code);
-        const match = url.pathname.match(/\/owner\/([a-zA-Z0-9_-]+)\/properties/i) || url.pathname.match(/\/properties\/qrcode\/([a-zA-Z0-9_-]+)/i);
-        if (match) {
-          ownerId = match[1];
-        } else {
-          serial = code.toUpperCase();
-        }
-      } else {
-        serial = code.toUpperCase();
-      }
-    } catch (e) {
-      serial = code.toUpperCase();
-    }
-
-    let finalOwnerId = ownerId;
-    if (!finalOwnerId && serial) {
-      // Try to find owner by serial
-      try {
-        const q = query(collection(db, "users"), where("qrCode", "==", serial));
-        const querySnapshot = await getDocs(q);
-        if (!querySnapshot.empty) {
-          finalOwnerId = querySnapshot.docs[0].id;
-        }
-      } catch (error) {
-        console.error("Error finding owner by serial:", error);
-      }
-    }
-
-    if (finalOwnerId) {
-      const ownerProperties = properties.filter(p => p.ownerId === finalOwnerId && p.status !== 'occupied');
-      
-      setScannedOwnerId(finalOwnerId);
-      setLastScannedQr(serial || finalOwnerId);
-      setQrStatus('valid');
-      setIsQrInvalid(false);
-      setIsScanning(false);
-      setIsNearbyActive(false);
-      setSearchQuery('');
-
-      if (ownerProperties.length === 1) {
-        navigate(`/property/${ownerProperties[0].id}`);
-      } else {
-        navigate(`/owner/${finalOwnerId}/properties`);
-      }
-    } else if (serial) {
-      // Check if it's a valid generated QR but not linked
-      const qGen = query(collection(db, "properties"), where("code", "==", serial));
-      const genSnapshot = await getDocs(qGen);
-      const systemQR = genSnapshot.docs.find(d => d.data().isSystemQR);
-      
-      setLastScannedQr(serial);
-      setScannedOwnerId(serial);
-      setSearchQuery('');
-      setIsScanning(false);
-      setIsNearbyActive(false);
-
-      if (systemQR) {
-        setQrStatus('unlinked');
-        setIsQrInvalid(false);
-        navigate(`/owner/${serial}/properties`);
-      } else {
-        setQrStatus('invalid');
-        setIsQrInvalid(true);
-        navigate('/');
       }
     }
   };
@@ -1128,7 +1125,7 @@ const App: React.FC = () => {
               <Building2 className="w-10 h-10 text-indigo-500" />
             </div>
             <div className="space-y-2">
-              <h3 className="text-2xl font-bold text-white">No Properties Posted</h3>
+              <h3 className="text-2xl font-bold text-white">No properties posted yet</h3>
               <p className="text-slate-400 text-sm leading-relaxed">
                 Owner <span className="text-indigo-400 font-bold">{qrOwner.name}</span> has linked this board, but hasn't posted any active property listings yet.
               </p>
@@ -1438,6 +1435,14 @@ const App: React.FC = () => {
   const AMENITIES_LIST = ["Lift", "Parking", "Security", "Gated Community", "Children's Play Area", "Water Supply"];
   const NEARBY_FACILITIES_LIST = ["School", "Hospital", "Metro", "Bus Stop", "Market"];
 
+  if (isAuthLoading) {
+    return (
+      <div className="min-h-screen bg-slate-950 flex items-center justify-center">
+        <Loader2 className="w-8 h-8 text-indigo-500 animate-spin" />
+      </div>
+    );
+  }
+
   if (showAuth) {
     return <Auth onLogin={handleAuthSuccess} onClose={() => setShowAuth(false)} />;
   }
@@ -1475,6 +1480,7 @@ const App: React.FC = () => {
           } />
           <Route path="/admin" element={<AdminConsole />} />
           <Route path="/user/:userId/my-properties" element={<MyPropertiesWrapper />} />
+          <Route path="/q/:serialNumber" element={<HomeView />} />
           <Route path="/owner/:ownerId/properties" element={<MyPropertiesWrapper />} />
           <Route path="/property/:propertyId" element={<HomeView />} />
           <Route path="/scan" element={
