@@ -310,12 +310,49 @@ const App: React.FC = () => {
     setDeleteModal({ isOpen: true, propertyId, step: 1 });
   };
 
+  const updateOwnerDynamicUrl = async (ownerId: string) => {
+    try {
+      const propsQuery = query(
+        collection(db, "properties"), 
+        where("ownerId", "==", ownerId),
+        where("status", "==", "active")
+      );
+      const propsSnap = await getDocs(propsQuery);
+      const ownerProperties = propsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      
+      let dynamicUrl = '';
+      if (ownerProperties.length === 1) {
+        dynamicUrl = `/property/${ownerProperties[0].id}`;
+      } else {
+        dynamicUrl = `/user/${ownerId}/my-properties`;
+      }
+
+      // Find the assigned board for this owner
+      const boardQuery = query(
+        collection(db, "properties"), 
+        where("ownerId", "==", ownerId),
+        where("isSystemQR", "==", true)
+      );
+      const boardSnap = await getDocs(boardQuery);
+      
+      for (const boardDoc of boardSnap.docs) {
+        await updateDoc(doc(db, "properties", boardDoc.id), {
+          dynamicUrl,
+          updatedAt: serverTimestamp()
+        });
+      }
+    } catch (error) {
+      console.error("Error updating dynamic URL:", error);
+    }
+  };
+
   const handleMarkAsOccupied = async () => {
-    if (!deleteModal.propertyId) return;
+    if (!deleteModal.propertyId || !user) return;
     try {
       await updateDoc(doc(db, "properties", deleteModal.propertyId), {
         status: 'occupied'
       });
+      await updateOwnerDynamicUrl(user.id);
       alert("Property marked as occupied.");
       setDeleteModal({ isOpen: false, propertyId: null, step: 1 });
       setSelectedPropertyId(null);
@@ -326,9 +363,10 @@ const App: React.FC = () => {
   };
 
   const handleConfirmDeletePermanently = async () => {
-    if (!deleteModal.propertyId) return;
+    if (!deleteModal.propertyId || !user) return;
     try {
       await deleteDoc(doc(db, "properties", deleteModal.propertyId));
+      await updateOwnerDynamicUrl(user.id);
       alert("Property deleted permanently.");
       setDeleteModal({ isOpen: false, propertyId: null, step: 1 });
       setSelectedPropertyId(null);
@@ -339,10 +377,12 @@ const App: React.FC = () => {
   };
 
   const handleRepostProperty = async (propertyId: string) => {
+    if (!user) return;
     try {
       await updateDoc(doc(db, "properties", propertyId), {
         status: 'active'
       });
+      await updateOwnerDynamicUrl(user.id);
       alert("Property reposted successfully.");
     } catch (error) {
       console.error("Error reposting property:", error);
@@ -554,6 +594,7 @@ const App: React.FC = () => {
     try {
       if (isEditingProperty && editingPropertyId) {
         await updateDoc(doc(db, "properties", editingPropertyId), propertyData);
+        await updateOwnerDynamicUrl(user.id);
         alert('Property updated successfully!');
       } else {
         (propertyData as any).createdAt = serverTimestamp();
@@ -565,6 +606,7 @@ const App: React.FC = () => {
           whatsappClicks: 0
         };
         await addDoc(collection(db, "properties"), propertyData);
+        await updateOwnerDynamicUrl(user.id);
         if (user.type === UserType.FINDER) {
           handleUpdateProfile({ type: UserType.OWNER });
           alert('Congratulations! Your first property is listed and your account has been upgraded to Owner status.');
@@ -736,12 +778,29 @@ const App: React.FC = () => {
       const q = query(collection(db, "properties"), where("code", "==", code));
       const querySnapshot = await getDocs(q);
       
+      // Calculate dynamic URL based on current properties
+      const propsQuery = query(
+        collection(db, "properties"), 
+        where("ownerId", "==", user.id),
+        where("status", "==", "active")
+      );
+      const propsSnap = await getDocs(propsQuery);
+      const ownerProperties = propsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      
+      let dynamicUrl = '';
+      if (ownerProperties.length === 1) {
+        dynamicUrl = `/property/${ownerProperties[0].id}`;
+      } else {
+        dynamicUrl = `/user/${user.id}/my-properties`;
+      }
+
       if (!querySnapshot.empty) {
         const propDoc = querySnapshot.docs[0];
         await updateDoc(doc(db, "properties", propDoc.id), {
           ownerId: user.id,
           isSystemQR: true, // Keep as system QR so it doesn't show in property listings
           status: 'Assigned',
+          dynamicUrl,
           updatedAt: serverTimestamp()
         });
       } else {
@@ -751,6 +810,7 @@ const App: React.FC = () => {
           ownerId: user.id,
           isSystemQR: true,
           status: 'Assigned',
+          dynamicUrl,
           createdAt: serverTimestamp(),
           updatedAt: serverTimestamp()
         });
@@ -773,7 +833,8 @@ const App: React.FC = () => {
         // Handle various URL patterns
         const match = url.pathname.match(/\/q\/([a-zA-Z0-9_-]+)/i) || 
                       url.pathname.match(/\/properties\/qrcode\/([a-zA-Z0-9_-]+)/i) ||
-                      url.pathname.match(/\/owner\/([a-zA-Z0-9_-]+)\/properties/i);
+                      url.pathname.match(/\/owner\/([a-zA-Z0-9_-]+)\/properties/i) ||
+                      url.pathname.match(/\/user\/([a-zA-Z0-9_-]+)\/my-properties/i);
         
         if (match) {
           serial = match[1].toUpperCase();
@@ -827,9 +888,14 @@ const App: React.FC = () => {
       setSearchQuery('');
 
       if (ownerProperties.length === 1) {
-        navigate(`/property/${ownerProperties[0].id}`, { replace: true });
+        const targetUrl = `/property/${ownerProperties[0].id}`;
+        navigate(targetUrl, { replace: true });
+      } else if (ownerProperties.length > 1) {
+        const targetUrl = `/user/${linkedOwnerId}/my-properties`;
+        navigate(targetUrl, { replace: true });
       } else {
-        navigate(`/owner/${linkedOwnerId}/properties`, { replace: true });
+        // No active properties, show the owner profile view in Home
+        navigate('/', { replace: true });
       }
     } else {
       // Check if it's a Property QR (linked directly to a property)
@@ -876,9 +942,14 @@ const App: React.FC = () => {
           setIsNearbyActive(false);
 
           if (ownerProperties.length === 1) {
-            navigate(`/property/${ownerProperties[0].id}`, { replace: true });
+            const targetUrl = `/property/${ownerProperties[0].id}`;
+            navigate(targetUrl, { replace: true });
+          } else if (ownerProperties.length > 1) {
+            const targetUrl = `/user/${ownerId}/my-properties`;
+            navigate(targetUrl, { replace: true });
           } else {
-            navigate(`/owner/${ownerId}/properties`, { replace: true });
+            // No active properties, show the owner profile view in Home
+            navigate('/', { replace: true });
           }
         }
       } else {
