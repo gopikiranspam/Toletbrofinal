@@ -15,6 +15,7 @@ import { QRScanner } from './QRScanner';
 interface ProfileSettingsProps {
   user: User;
   onUpdate: (updatedUser: Partial<User>) => void;
+  onLinkBoard?: (serial: string) => void;
   onLogout: () => void;
   properties?: any[];
   onEditProperty?: (property: any) => void;
@@ -37,7 +38,7 @@ const AVAILABLE_TAGS = [
 ];
 
 export const ProfileSettings: React.FC<ProfileSettingsProps> = ({ 
-  user, onUpdate, onLogout, properties = [], onEditProperty, onDeleteProperty, onRepostProperty, setActiveTab
+  user, onUpdate, onLinkBoard, onLogout, properties = [], onEditProperty, onDeleteProperty, onRepostProperty, setActiveTab
 }) => {
   if (!user) return null;
 
@@ -84,7 +85,11 @@ export const ProfileSettings: React.FC<ProfileSettingsProps> = ({
     setIsGenerating(true);
     setTimeout(() => {
       const code = generateNewCode();
-      onUpdate({ qrCode: code, primaryPhoneEnabled: true, showCallMessage: true, callMessageText: DEFAULT_CALL_MESSAGE });
+      if (onLinkBoard) {
+        onLinkBoard(code);
+      } else {
+        onUpdate({ qrCode: code, primaryPhoneEnabled: true, showCallMessage: true, callMessageText: DEFAULT_CALL_MESSAGE });
+      }
       setIsGenerating(false);
       setToolView('main');
     }, 800);
@@ -299,9 +304,13 @@ export const ProfileSettings: React.FC<ProfileSettingsProps> = ({
                         } catch (e) {
                           serial = code;
                         }
-                        onUpdate({ qrCode: serial.toUpperCase() });
+                        if (onLinkBoard) {
+                          onLinkBoard(serial.toUpperCase());
+                        } else {
+                          onUpdate({ qrCode: serial.toUpperCase() });
+                          alert('Board linked successfully!');
+                        }
                         setToolView('main');
-                        alert('Board linked successfully!');
                       }} onClose={() => setToolView('setup')} />
                     </div>
                     <p className="text-[10px] text-center text-slate-500 font-bold uppercase tracking-widest">Position QR code within the frame</p>

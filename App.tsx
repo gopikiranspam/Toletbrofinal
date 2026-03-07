@@ -724,6 +724,45 @@ const App: React.FC = () => {
     fetchPropertyOwner();
   }, [selectedPropertyId, allUsers.length]);
 
+  const handleLinkBoard = async (serial: string) => {
+    if (!user) return;
+    const code = serial.toUpperCase();
+    
+    try {
+      // 1. Update user profile
+      await handleUpdateProfile({ qrCode: code });
+      
+      // 2. Update the property document (the system QR)
+      const q = query(collection(db, "properties"), where("code", "==", code));
+      const querySnapshot = await getDocs(q);
+      
+      if (!querySnapshot.empty) {
+        const propDoc = querySnapshot.docs[0];
+        await updateDoc(doc(db, "properties", propDoc.id), {
+          ownerId: user.id,
+          isSystemQR: true, // Keep as system QR so it doesn't show in property listings
+          status: 'Assigned',
+          updatedAt: serverTimestamp()
+        });
+      } else {
+        // If it doesn't exist in properties yet, create it as a linked board
+        await addDoc(collection(db, "properties"), {
+          code,
+          ownerId: user.id,
+          isSystemQR: true,
+          status: 'Assigned',
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp()
+        });
+      }
+      
+      alert('Board linked successfully!');
+    } catch (error) {
+      console.error("Error linking board:", error);
+      alert("Failed to link board. Please try again.");
+    }
+  };
+
   const handleScan = useCallback(async (code: string) => {
     if (!code) return;
     
@@ -805,16 +844,42 @@ const App: React.FC = () => {
         setIsScanning(false);
         setIsNearbyActive(false);
 
-        if (propertyData.isSystemQR) {
+        if (propertyData.isSystemQR && !propertyData.ownerId) {
           setScannedOwnerId(serial);
           setQrStatus('unlinked');
           setIsQrInvalid(false);
           navigate(`/q/${serial}`, { replace: true });
         } else {
-          setScannedOwnerId(propertyData.ownerId);
+          const ownerId = propertyData.ownerId;
+          if (!ownerId) {
+            // This shouldn't happen if isSystemQR is false, but safety first
+            setQrStatus('invalid');
+            navigate('/', { replace: true });
+            return;
+          }
+
+          // Fetch properties for this owner to decide where to redirect
+          const propsQuery = query(
+            collection(db, "properties"), 
+            where("ownerId", "==", ownerId),
+            where("status", "==", "active")
+          );
+          const propsSnap = await getDocs(propsQuery);
+          const ownerProperties = propsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+
+          setScannedOwnerId(ownerId);
           setQrStatus('valid');
           setIsQrInvalid(false);
-          navigate(`/property/${propertyData.id}`, { replace: true });
+          setLastScannedQr(serial);
+          setSearchQuery('');
+          setIsScanning(false);
+          setIsNearbyActive(false);
+
+          if (ownerProperties.length === 1) {
+            navigate(`/property/${ownerProperties[0].id}`, { replace: true });
+          } else {
+            navigate(`/owner/${ownerId}/properties`, { replace: true });
+          }
         }
       } else {
         setLastScannedQr(serial);
@@ -1485,6 +1550,7 @@ const App: React.FC = () => {
             <ProfileSettings 
               user={user} 
               onUpdate={handleUpdateProfile} 
+              onLinkBoard={handleLinkBoard}
               onLogout={handleLogout}
               properties={allOwnerProperties}
               onEditProperty={handleEditProperty}
@@ -1505,6 +1571,7 @@ const App: React.FC = () => {
                   <ProfileSettings 
                     user={user} 
                     onUpdate={handleUpdateProfile} 
+                    onLinkBoard={handleLinkBoard}
                     onLogout={handleLogout}
                     properties={allOwnerProperties}
                     onEditProperty={handleEditProperty}
