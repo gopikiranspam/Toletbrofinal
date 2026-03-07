@@ -59,6 +59,7 @@ const App: React.FC = () => {
   const [scannedOwnerId, setScannedOwnerId] = useState<string | null>(null);
   const [qrStatus, setQrStatus] = useState<'valid' | 'unlinked' | 'invalid' | null>(null);
   const [isQrInvalid, setIsQrInvalid] = useState(false);
+  const [isOwnerLoading, setIsOwnerLoading] = useState(false);
 
   const normalizedSearchQuery = searchQuery.trim().toUpperCase();
   const isQrFormat = /^[A-Z]{3}\d{3}$/.test(normalizedSearchQuery);
@@ -132,6 +133,7 @@ const App: React.FC = () => {
     }
 
     const fetchOwner = async () => {
+      setIsOwnerLoading(true);
       try {
         const userRef = doc(db, 'users', scannedOwnerId);
         const userDoc = await getDoc(userRef);
@@ -161,6 +163,8 @@ const App: React.FC = () => {
         if (error.code !== 'permission-denied') {
           console.error("Error fetching QR owner:", error);
         }
+      } finally {
+        setIsOwnerLoading(false);
       }
     };
 
@@ -393,7 +397,8 @@ const App: React.FC = () => {
       const byId = allUsers.find(u => u.id === scannedOwnerId);
       if (byId) return byId;
       // Fallback for cases where serial might be passed as ID
-      return allUsers.find(u => u.qrCode?.toUpperCase() === scannedOwnerId.toUpperCase());
+      const bySerial = allUsers.find(u => u.qrCode?.toUpperCase() === scannedOwnerId.toUpperCase());
+      if (bySerial) return bySerial;
     }
     if (isQrFormat) {
       return allUsers.find(u => u.qrCode?.toUpperCase() === normalizedSearchQuery);
@@ -758,17 +763,23 @@ const App: React.FC = () => {
   }, [selectedPropertyId, allUsers.length]);
 
   const handleScan = useCallback(async (code: string) => {
+    if (!code) return;
+    
     let serial = '';
     try {
       if (code.startsWith('http')) {
         const url = new URL(code);
+        // Handle various URL patterns
         const match = url.pathname.match(/\/q\/([a-zA-Z0-9_-]+)/i) || 
                       url.pathname.match(/\/properties\/qrcode\/([a-zA-Z0-9_-]+)/i) ||
                       url.pathname.match(/\/owner\/([a-zA-Z0-9_-]+)\/properties/i);
+        
         if (match) {
           serial = match[1].toUpperCase();
         } else {
-          serial = url.pathname.split('/').pop()?.toUpperCase() || '';
+          // Fallback: get the last part of the path
+          const parts = url.pathname.split('/').filter(Boolean);
+          serial = parts[parts.length - 1]?.toUpperCase() || '';
         }
       } else {
         serial = code.toUpperCase();
@@ -779,18 +790,25 @@ const App: React.FC = () => {
 
     if (!serial) return;
 
-    let linkedOwnerId = '';
+    // Reset states
+    setQrStatus(null);
+    setIsQrInvalid(false);
+
+    let linkedOwner: User | null = null;
     try {
       const q = query(collection(db, "users"), where("qrCode", "==", serial));
       const querySnapshot = await getDocs(q);
       if (!querySnapshot.empty) {
-        linkedOwnerId = querySnapshot.docs[0].id;
+        linkedOwner = { ...querySnapshot.docs[0].data(), id: querySnapshot.docs[0].id } as User;
+        // Add to allUsers immediately for UI responsiveness
+        setAllUsers(prev => prev.find(u => u.id === linkedOwner!.id) ? prev : [...prev, linkedOwner!]);
       }
     } catch (error) {
       console.error("Error finding owner by serial:", error);
     }
 
-    if (linkedOwnerId) {
+    if (linkedOwner) {
+      const linkedOwnerId = linkedOwner.id;
       // Fetch properties for this owner directly from Firestore for reliability
       const propsQuery = query(
         collection(db, "properties"), 
@@ -803,7 +821,6 @@ const App: React.FC = () => {
       setScannedOwnerId(linkedOwnerId);
       setLastScannedQr(serial);
       setQrStatus('valid');
-      setIsQrInvalid(false);
       setIsScanning(false);
       setIsNearbyActive(false);
       setSearchQuery('');
@@ -814,6 +831,7 @@ const App: React.FC = () => {
         navigate(`/owner/${linkedOwnerId}/properties`, { replace: true });
       }
     } else {
+      // Check if it's a system QR
       const qGen = query(collection(db, "properties"), where("code", "==", serial));
       const genSnapshot = await getDocs(qGen);
       const systemQR = genSnapshot.docs.find(d => d.data().isSystemQR);
@@ -827,7 +845,8 @@ const App: React.FC = () => {
       if (systemQR) {
         setQrStatus('unlinked');
         setIsQrInvalid(false);
-        navigate(`/owner/${serial}/properties`, { replace: true });
+        // Stay on home/q route to show the "unlinked" message
+        navigate(`/q/${serial}`, { replace: true });
       } else {
         setQrStatus('invalid');
         setIsQrInvalid(true);
@@ -838,15 +857,31 @@ const App: React.FC = () => {
 
   useEffect(() => {
     const handleRouting = () => {
-      const path = location.pathname;
-      const match = path.match(/\/q\/([a-zA-Z0-9_-]+)/i) || path.match(/\/properties\/qrcode\/([a-zA-Z0-9_-]+)/i);
+      let path = location.pathname;
+      // Remove trailing slash if any
+      if (path.length > 1 && path.endsWith('/')) {
+        path = path.slice(0, -1);
+      }
+      
+      // Match /q/SERIAL, /properties/qrcode/SERIAL, or just /SERIAL if it looks like a serial
+      const match = path.match(/\/q\/([a-zA-Z0-9_-]+)/i) || 
+                    path.match(/\/properties\/qrcode\/([a-zA-Z0-9_-]+)/i);
+      
       if (match) {
         const serial = match[1];
-        handleScan(serial);
+        if (serial !== lastScannedQr) {
+          handleScan(serial);
+        }
+      } else if (path.length === 7 && path.startsWith('/')) {
+        // Handle /ABC123 pattern
+        const potentialSerial = path.substring(1).toUpperCase();
+        if (/^[A-Z]{3}\d{3}$/.test(potentialSerial) && potentialSerial !== lastScannedQr) {
+          handleScan(potentialSerial);
+        }
       }
     };
     handleRouting();
-  }, [location.pathname, handleScan]);
+  }, [location.pathname, handleScan, lastScannedQr]);
 
 
   const isOwner = user?.type === UserType.OWNER;
@@ -1020,7 +1055,7 @@ const App: React.FC = () => {
               <span className="text-xs font-black uppercase tracking-widest">Back to Search</span>
             </button>
 
-            {qrOwner && (
+            {qrOwner ? (
               <div className="bg-slate-900 rounded-[2.5rem] border border-slate-800 p-6 md:p-8 mb-8 relative overflow-hidden">
                 <div className="absolute top-0 right-0 w-64 h-64 bg-indigo-600/5 rounded-full blur-3xl -mr-32 -mt-32"></div>
                 <div className="relative z-10 flex flex-col md:flex-row items-center gap-6 text-center md:text-left">
@@ -1048,7 +1083,12 @@ const App: React.FC = () => {
                   </div>
                 </div>
               </div>
-            )}
+            ) : isOwnerLoading ? (
+              <div className="bg-slate-900 rounded-[2.5rem] border border-slate-800 p-12 mb-8 flex flex-col items-center justify-center gap-4">
+                <Loader2 className="w-10 h-10 text-indigo-500 animate-spin" />
+                <p className="text-slate-400 font-bold uppercase tracking-widest text-[10px] animate-pulse">Fetching Owner Details...</p>
+              </div>
+            ) : null}
           </div>
         </div>
       )}
@@ -1428,6 +1468,7 @@ const App: React.FC = () => {
         onSelectProperty={handleSelectProperty}
         onEditProperty={handleEditProperty}
         onDeleteProperty={handleDeleteProperty}
+        loading={isOwnerLoading}
       />
     );
   };

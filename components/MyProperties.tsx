@@ -3,7 +3,7 @@ import React, { useMemo } from 'react';
 import { Property, User, UserType } from '../types';
 import { PropertyCard } from './PropertyCard';
 import { motion } from 'framer-motion';
-import { Package, ArrowLeft, QrCode, User as UserIcon, Phone, MessageCircle, Info, AlertCircle } from 'lucide-react';
+import { Package, ArrowLeft, QrCode, User as UserIcon, Phone, MessageCircle, Info, AlertCircle, Loader2 } from 'lucide-react';
 
 interface MyPropertiesProps {
   owner: User | null;
@@ -13,6 +13,7 @@ interface MyPropertiesProps {
   onSelectProperty: (id: string) => void;
   onEditProperty?: (property: Property) => void;
   onDeleteProperty?: (id: string) => void;
+  loading?: boolean;
 }
 
 export const MyProperties: React.FC<MyPropertiesProps> = ({ 
@@ -22,12 +23,22 @@ export const MyProperties: React.FC<MyPropertiesProps> = ({
   onBack, 
   onSelectProperty,
   onEditProperty,
-  onDeleteProperty
+  onDeleteProperty,
+  loading = false
 }) => {
   const filteredProperties = useMemo(() => {
     if (!owner) return [];
     return properties.filter(p => p.ownerId === owner.id && !p.isSystemQR);
   }, [owner, properties]);
+
+  if (loading) {
+    return (
+      <div className="min-h-[60vh] flex flex-col items-center justify-center text-center p-6">
+        <Loader2 className="w-10 h-10 text-indigo-500 animate-spin mb-4" />
+        <p className="text-slate-400 font-bold uppercase tracking-widest text-[10px] animate-pulse">Fetching Owner Details...</p>
+      </div>
+    );
+  }
 
   if (!owner) {
     return (
