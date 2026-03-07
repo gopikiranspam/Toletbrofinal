@@ -1,7 +1,7 @@
 
 import { initializeApp } from 'firebase/app';
 import { getAuth } from 'firebase/auth';
-import { initializeFirestore } from 'firebase/firestore';
+import { initializeFirestore, memoryLocalCache } from 'firebase/firestore';
 import { getStorage } from 'firebase/storage';
 import { getAnalytics } from "firebase/analytics";
 
@@ -23,9 +23,10 @@ const app = initializeApp(firebaseConfig);
 export const analytics = typeof window !== 'undefined' ? getAnalytics(app) : null;
 export const auth = getAuth(app);
 
-// Initialize Firestore with settings to avoid "client is offline" errors in restricted environments
+// Initialize Firestore with settings to avoid "client is offline" errors in restricted environments (like iframes)
 export const db = initializeFirestore(app, {
   experimentalForceLongPolling: true,
+  localCache: memoryLocalCache(),
 });
 
 export const storage = getStorage(app);

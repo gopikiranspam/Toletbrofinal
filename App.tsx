@@ -498,83 +498,27 @@ const App: React.FC = () => {
     e?.preventDefault();
     if (!user) return;
     
-    // Comprehensive Validation
-    const requiredFields = [
-      { key: 'locality', label: 'Locality' },
-      { key: 'city', label: 'City' },
-      { key: 'location', label: 'Full Address' },
-      { key: 'state', label: 'State' },
-      { key: 'sqft', label: 'Built-up Area' },
-      { key: 'floorNo', label: 'Floor Number' },
-      { key: 'totalFloors', label: 'Total Floors' },
-      { key: 'bathrooms', label: 'Bathrooms' },
-      { key: 'price', label: newProp.type === 'rent' ? 'Monthly Rent' : 'Expected Price' },
-    ];
-
-    if (newProp.type === 'rent') {
-      requiredFields.push({ key: 'securityDeposit', label: 'Security Deposit' });
-    }
-
-    for (const field of requiredFields) {
-      const val = newProp[field.key as keyof Property];
-      if (val === undefined || val === null || val === '' || (typeof val === 'number' && val <= 0)) {
-        alert(`${field.label} is mandatory and must be greater than 0.`);
-        return;
-      }
-    }
-
-    if ((newProp.description?.length || 0) < 50) {
-      alert("Description must be at least 50 characters.");
-      return;
-    }
-
-    if (!newProp.images || newProp.images.length === 0) {
-      alert("Please upload at least one image.");
-      return;
-    }
-
-    if (newProp.type === 'buy' && (!newProp.amenities || newProp.amenities.length === 0)) {
-      alert("Amenities are mandatory for Sale listings.");
-      return;
-    }
-
-    if (newProp.images.length < 4) {
-      if (!confirm("We recommend at least 4 photos for better visibility. Continue anyway?")) {
-        return;
-      }
-    }
-
     let finalLat = newProp.latitude;
     let finalLng = newProp.longitude;
 
-    // Forward Geocoding Fallback if coordinates are missing
+    // Forward Geocoding Fallback if coordinates are missing but address is provided
     if (!finalLat || !finalLng) {
-      if (!newProp.location) {
-        alert("Please use the 'Fetch address' tool or provide a full address.");
-        return;
-      }
-
-      setIsFetchingAddress(true);
-      try {
-        const fullAddress = `${newProp.location}, ${newProp.locality}, ${newProp.city}, ${newProp.state}`;
-        const response = await fetch(`/api/geocode/forward?address=${encodeURIComponent(fullAddress)}`);
-        const data = await response.json();
-        
-        if (data.status === "OK" && data.results && data.results.length > 0) {
-          finalLat = data.results[0].geometry.location.lat;
-          finalLng = data.results[0].geometry.location.lng;
-        } else {
-          alert("Could not verify the address location. Please use the 'Fetch address' button to capture your precise location.");
+      if (newProp.location) {
+        setIsFetchingAddress(true);
+        try {
+          const fullAddress = `${newProp.location}, ${newProp.locality}, ${newProp.city}, ${newProp.state}`;
+          const response = await fetch(`/api/geocode/forward?address=${encodeURIComponent(fullAddress)}`);
+          const data = await response.json();
+          
+          if (data.status === "OK" && data.results && data.results.length > 0) {
+            finalLat = data.results[0].geometry.location.lat;
+            finalLng = data.results[0].geometry.location.lng;
+          }
+        } catch (error) {
+          console.error("Forward geocoding failed:", error);
+        } finally {
           setIsFetchingAddress(false);
-          return;
         }
-      } catch (error) {
-        console.error("Forward geocoding failed:", error);
-        alert("Failed to verify address coordinates. Please try again.");
-        setIsFetchingAddress(false);
-        return;
-      } finally {
-        setIsFetchingAddress(false);
       }
     }
 
@@ -1659,7 +1603,7 @@ const App: React.FC = () => {
                     <motion.div initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} className="space-y-6">
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                         <div>
-                          <label className="block text-[10px] font-bold text-slate-500 uppercase mb-2">Property For*</label>
+                          <label className="block text-[10px] font-bold text-slate-500 uppercase mb-2">Property For</label>
                           <div className="grid grid-cols-2 gap-2">
                             {[
                               { id: 'rent', label: 'Rent' },
@@ -1673,28 +1617,28 @@ const App: React.FC = () => {
                         </div>
 
                         <div>
-                          <label className="block text-[10px] font-bold text-slate-500 uppercase mb-2">Property Type*</label>
+                          <label className="block text-[10px] font-bold text-slate-500 uppercase mb-2">Property Type</label>
                           <select className="w-full bg-slate-800 border-none rounded-xl py-3 px-4 text-xs focus:ring-1 focus:ring-indigo-500" value={newProp.propertyType} onChange={e => setNewProp({...newProp, propertyType: e.target.value as any})}>
                             {['Independent House', 'Apartment', 'Standalone Building', 'Hostel', 'Commercial'].map(v => <option key={v} value={v}>{v}</option>)}
                           </select>
                         </div>
 
                         <div>
-                          <label className="block text-[10px] font-bold text-slate-500 uppercase mb-2">BHK Type*</label>
+                          <label className="block text-[10px] font-bold text-slate-500 uppercase mb-2">BHK Type</label>
                           <select className="w-full bg-slate-800 border-none rounded-xl py-3 px-4 text-xs focus:ring-1 focus:ring-indigo-500" value={newProp.bhkType} onChange={e => setNewProp({...newProp, bhkType: e.target.value as any})}>
                             {['1 RK', '1 BHK', '2 BHK', '3 BHK', '4+ BHK'].map(v => <option key={v} value={v}>{v}</option>)}
                           </select>
                         </div>
 
                         <div>
-                          <label className="block text-[10px] font-bold text-slate-500 uppercase mb-2">Furnishing*</label>
+                          <label className="block text-[10px] font-bold text-slate-500 uppercase mb-2">Furnishing</label>
                           <select className="w-full bg-slate-800 border-none rounded-xl py-3 px-4 text-xs focus:ring-1 focus:ring-indigo-500" value={newProp.furnishing} onChange={e => setNewProp({...newProp, furnishing: e.target.value as any})}>
                             {['Unfurnished', 'Semi-Furnished', 'Fully Furnished'].map(v => <option key={v} value={v}>{v}</option>)}
                           </select>
                         </div>
                         
                         <div className="md:col-span-2 space-y-4">
-                          <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Locate Your Property*</label>
+                          <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Locate Your Property</label>
                           <div className="flex flex-col sm:flex-row gap-4 p-5 bg-slate-950/40 rounded-2xl border border-slate-800 items-center justify-between">
                             <div className="flex items-center gap-3">
                               <div className={`p-2 rounded-lg ${newProp.latitude ? 'bg-emerald-500/20 text-emerald-500 shadow-[0_0_15px_rgba(16,185,129,0.2)]' : 'bg-indigo-500/20 text-indigo-500'}`}>
@@ -1721,23 +1665,23 @@ const App: React.FC = () => {
                         </div>
 
                         <div>
-                          <label className="block text-[10px] font-bold text-slate-500 uppercase mb-2">Locality*</label>
-                          <input type="text" placeholder="Locality name" required className="w-full bg-slate-800 border-none rounded-xl py-3 px-4 text-xs focus:ring-1 focus:ring-indigo-500" value={newProp.locality} onChange={e => setNewProp({...newProp, locality: e.target.value})} />
+                          <label className="block text-[10px] font-bold text-slate-500 uppercase mb-2">Locality</label>
+                          <input type="text" placeholder="Locality name" className="w-full bg-slate-800 border-none rounded-xl py-3 px-4 text-xs focus:ring-1 focus:ring-indigo-500" value={newProp.locality} onChange={e => setNewProp({...newProp, locality: e.target.value})} />
                         </div>
 
                         <div>
-                          <label className="block text-[10px] font-bold text-slate-500 uppercase mb-2">City*</label>
-                          <input type="text" placeholder="City name" required className="w-full bg-slate-800 border-none rounded-xl py-3 px-4 text-xs focus:ring-1 focus:ring-indigo-500" value={newProp.city} onChange={e => setNewProp({...newProp, city: e.target.value})} />
+                          <label className="block text-[10px] font-bold text-slate-500 uppercase mb-2">City</label>
+                          <input type="text" placeholder="City name" className="w-full bg-slate-800 border-none rounded-xl py-3 px-4 text-xs focus:ring-1 focus:ring-indigo-500" value={newProp.city} onChange={e => setNewProp({...newProp, city: e.target.value})} />
                         </div>
 
                         <div className="md:col-span-2">
-                          <label className="block text-[10px] font-bold text-slate-500 uppercase mb-2">Full Address*</label>
-                          <textarea placeholder="Complete address detail..." required className="w-full bg-slate-800 border-none rounded-xl py-3 px-4 text-xs resize-none focus:ring-1 focus:ring-indigo-500" rows={2} value={newProp.location} onChange={e => setNewProp({...newProp, location: e.target.value})} />
+                          <label className="block text-[10px] font-bold text-slate-500 uppercase mb-2">Full Address</label>
+                          <textarea placeholder="Complete address detail..." className="w-full bg-slate-800 border-none rounded-xl py-3 px-4 text-xs resize-none focus:ring-1 focus:ring-indigo-500" rows={2} value={newProp.location} onChange={e => setNewProp({...newProp, location: e.target.value})} />
                         </div>
                         
                         <div className="md:col-span-2">
-                          <label className="block text-[10px] font-bold text-slate-500 uppercase mb-2">State*</label>
-                          <input type="text" placeholder="State" required className="w-full bg-slate-800 border-none rounded-xl py-3 px-4 text-xs focus:ring-1 focus:ring-indigo-500" value={newProp.state} onChange={e => setNewProp({...newProp, state: e.target.value})} />
+                          <label className="block text-[10px] font-bold text-slate-500 uppercase mb-2">State</label>
+                          <input type="text" placeholder="State" className="w-full bg-slate-800 border-none rounded-xl py-3 px-4 text-xs focus:ring-1 focus:ring-indigo-500" value={newProp.state} onChange={e => setNewProp({...newProp, state: e.target.value})} />
                         </div>
                       </div>
                     </motion.div>
@@ -1749,20 +1693,20 @@ const App: React.FC = () => {
                         <h4 className="text-[10px] font-bold text-indigo-400 uppercase tracking-widest">Property Specifications</h4>
                         <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
                           <div>
-                            <label className="text-[10px] font-bold text-slate-500 uppercase mb-1">Built-up Area (sq ft)*</label>
-                            <input type="number" required className="w-full bg-slate-800 py-3 px-4 rounded-xl text-xs border-none focus:ring-1 focus:ring-indigo-500" value={newProp.sqft || ''} onChange={e => setNewProp({...newProp, sqft: Number(e.target.value)})} />
+                            <label className="text-[10px] font-bold text-slate-500 uppercase mb-1">Built-up Area (sq ft)</label>
+                            <input type="number" className="w-full bg-slate-800 py-3 px-4 rounded-xl text-xs border-none focus:ring-1 focus:ring-indigo-500" value={newProp.sqft || ''} onChange={e => setNewProp({...newProp, sqft: Number(e.target.value)})} />
                           </div>
                           <div>
-                            <label className="text-[10px] font-bold text-slate-500 uppercase mb-1">Floor No*</label>
-                            <input type="number" required className="w-full bg-slate-800 py-3 px-4 rounded-xl text-xs border-none focus:ring-1 focus:ring-indigo-500" value={newProp.floorNo || ''} onChange={e => setNewProp({...newProp, floorNo: Number(e.target.value)})} />
+                            <label className="text-[10px] font-bold text-slate-500 uppercase mb-1">Floor No</label>
+                            <input type="number" className="w-full bg-slate-800 py-3 px-4 rounded-xl text-xs border-none focus:ring-1 focus:ring-indigo-500" value={newProp.floorNo || ''} onChange={e => setNewProp({...newProp, floorNo: Number(e.target.value)})} />
                           </div>
                           <div>
-                            <label className="text-[10px] font-bold text-slate-500 uppercase mb-1">Total Floors*</label>
-                            <input type="number" required className="w-full bg-slate-800 py-3 px-4 rounded-xl text-xs border-none focus:ring-1 focus:ring-indigo-500" value={newProp.totalFloors || ''} onChange={e => setNewProp({...newProp, totalFloors: Number(e.target.value)})} />
+                            <label className="text-[10px] font-bold text-slate-500 uppercase mb-1">Total Floors</label>
+                            <input type="number" className="w-full bg-slate-800 py-3 px-4 rounded-xl text-xs border-none focus:ring-1 focus:ring-indigo-500" value={newProp.totalFloors || ''} onChange={e => setNewProp({...newProp, totalFloors: Number(e.target.value)})} />
                           </div>
                           <div>
-                            <label className="text-[10px] font-bold text-slate-500 uppercase mb-1">Bathrooms*</label>
-                            <input type="number" required className="w-full bg-slate-800 py-3 px-4 rounded-xl text-xs border-none focus:ring-1 focus:ring-indigo-500" value={newProp.bathrooms || ''} onChange={e => setNewProp({...newProp, bathrooms: Number(e.target.value)})} />
+                            <label className="text-[10px] font-bold text-slate-500 uppercase mb-1">Bathrooms</label>
+                            <input type="number" className="w-full bg-slate-800 py-3 px-4 rounded-xl text-xs border-none focus:ring-1 focus:ring-indigo-500" value={newProp.bathrooms || ''} onChange={e => setNewProp({...newProp, bathrooms: Number(e.target.value)})} />
                           </div>
                         </div>
                       </div>
@@ -1772,12 +1716,12 @@ const App: React.FC = () => {
                         {newProp.type === 'rent' ? (
                           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                             <div>
-                              <label className="block text-[10px] font-bold text-slate-500 uppercase mb-2">Monthly Rent (₹)*</label>
-                              <input type="number" required className="w-full bg-slate-800 border-none rounded-xl py-3 px-4 text-xs focus:ring-1 focus:ring-indigo-500" value={newProp.price || ''} onChange={e => setNewProp({...newProp, price: Number(e.target.value)})} />
+                              <label className="block text-[10px] font-bold text-slate-500 uppercase mb-2">Monthly Rent (₹)</label>
+                              <input type="number" className="w-full bg-slate-800 border-none rounded-xl py-3 px-4 text-xs focus:ring-1 focus:ring-indigo-500" value={newProp.price || ''} onChange={e => setNewProp({...newProp, price: Number(e.target.value)})} />
                             </div>
                             <div>
-                              <label className="block text-[10px] font-bold text-slate-500 uppercase mb-2">Security Deposit (₹)*</label>
-                              <input type="number" required className="w-full bg-slate-800 border-none rounded-xl py-3 px-4 text-xs focus:ring-1 focus:ring-indigo-500" value={newProp.securityDeposit || ''} onChange={e => setNewProp({...newProp, securityDeposit: Number(e.target.value)})} />
+                              <label className="block text-[10px] font-bold text-slate-500 uppercase mb-2">Security Deposit (₹)</label>
+                              <input type="number" className="w-full bg-slate-800 border-none rounded-xl py-3 px-4 text-xs focus:ring-1 focus:ring-indigo-500" value={newProp.securityDeposit || ''} onChange={e => setNewProp({...newProp, securityDeposit: Number(e.target.value)})} />
                             </div>
                             <div>
                               <label className="block text-[10px] font-bold text-slate-500 uppercase mb-2">Maintenance Charges (₹)</label>
@@ -1788,7 +1732,7 @@ const App: React.FC = () => {
                               <input type="date" className="w-full bg-slate-800 border-none rounded-xl py-3 px-4 text-xs focus:ring-1 focus:ring-indigo-500" value={newProp.availableFrom || ''} onChange={e => setNewProp({...newProp, availableFrom: e.target.value})} />
                             </div>
                             <div className="md:col-span-2">
-                              <label className="block text-[10px] font-bold text-slate-500 uppercase mb-2">Preferred Tenant*</label>
+                              <label className="block text-[10px] font-bold text-slate-500 uppercase mb-2">Preferred Tenant</label>
                               <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                                 {['Family only', 'Bachelor', 'Office Only', 'Anyone'].map(v => (
                                   <button key={v} type="button" onClick={() => setNewProp({...newProp, preferredTenant: v as any})} className={`py-2 rounded-xl text-[10px] font-bold border transition-all ${newProp.preferredTenant === v ? 'bg-indigo-600 border-indigo-600 text-white' : 'bg-slate-800 border-transparent text-slate-400'}`}>
@@ -1801,8 +1745,8 @@ const App: React.FC = () => {
                         ) : (
                           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                             <div>
-                              <label className="block text-[10px] font-bold text-slate-500 uppercase mb-2">Expected Price (₹)*</label>
-                              <input type="number" required className="w-full bg-slate-800 border-none rounded-xl py-3 px-4 text-xs focus:ring-1 focus:ring-indigo-500" value={newProp.price || ''} onChange={e => setNewProp({...newProp, price: Number(e.target.value)})} />
+                              <label className="block text-[10px] font-bold text-slate-500 uppercase mb-2">Expected Price (₹)</label>
+                              <input type="number" className="w-full bg-slate-800 border-none rounded-xl py-3 px-4 text-xs focus:ring-1 focus:ring-indigo-500" value={newProp.price || ''} onChange={e => setNewProp({...newProp, price: Number(e.target.value)})} />
                             </div>
                             <div className="grid grid-cols-2 gap-4">
                               <div>
@@ -1831,7 +1775,7 @@ const App: React.FC = () => {
                       </div>
 
                       <div className="space-y-4">
-                        <label className="block text-[10px] text-slate-500 uppercase font-bold tracking-wider">Amenities {newProp.type === 'buy' && '*'}</label>
+                        <label className="block text-[10px] text-slate-500 uppercase font-bold tracking-wider">Amenities</label>
                         <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                           {AMENITIES_LIST.map(amenity => (
                             <button key={amenity} type="button" onClick={() => {
@@ -1849,7 +1793,7 @@ const App: React.FC = () => {
                   {currentFormStep === 3 && (
                     <motion.div initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} className="space-y-6">
                       <div className="space-y-4">
-                        <label className="block text-[10px] text-slate-500 uppercase mb-2 font-bold">Photos (Min 4 Recommended)*</label>
+                        <label className="block text-[10px] text-slate-500 uppercase mb-2 font-bold">Photos (Min 4 Recommended)</label>
                         <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
                           {newProp.images?.map((img, i) => (
                             <div key={i} className="relative aspect-square rounded-2xl overflow-hidden shadow-lg border border-white/5 group/img">
@@ -1910,14 +1854,14 @@ const App: React.FC = () => {
                       </div>
 
                       <div>
-                        <label className="block text-[10px] text-slate-500 uppercase mb-2 font-bold">Property Title*</label>
-                        <input type="text" required readOnly placeholder="Auto-generated title" className="w-full bg-slate-800/50 border-none rounded-xl py-3 px-4 text-xs text-slate-400 cursor-not-allowed" value={newProp.title} />
+                        <label className="block text-[10px] text-slate-500 uppercase mb-2 font-bold">Property Title</label>
+                        <input type="text" readOnly placeholder="Auto-generated title" className="w-full bg-slate-800/50 border-none rounded-xl py-3 px-4 text-xs text-slate-400 cursor-not-allowed" value={newProp.title} />
                         <p className="text-[8px] text-slate-500 mt-1 italic">Automatically generated from Property Type and BHK Type.</p>
                       </div>
 
                       <div>
                         <div className="flex justify-between items-center mb-2">
-                          <label className="block text-[10px] text-slate-500 uppercase font-bold">Description (Min 50 chars)*</label>
+                          <label className="block text-[10px] text-slate-500 uppercase font-bold">Description</label>
                           <button 
                             type="button" 
                             onClick={() => setNewProp({...newProp, description: generatePredefinedDescription(newProp)})}
@@ -1926,11 +1870,11 @@ const App: React.FC = () => {
                             Auto-generate
                           </button>
                         </div>
-                        <textarea rows={4} required placeholder="Detailed description..." className="w-full bg-slate-800 border-none rounded-xl py-3 px-4 text-xs resize-none focus:ring-1 focus:ring-indigo-500" value={newProp.description} onChange={e => setNewProp({...newProp, description: e.target.value})} />
+                        <textarea rows={4} placeholder="Detailed description..." className="w-full bg-slate-800 border-none rounded-xl py-3 px-4 text-xs resize-none focus:ring-1 focus:ring-indigo-500" value={newProp.description} onChange={e => setNewProp({...newProp, description: e.target.value})} />
                       </div>
 
                       <div>
-                        <label className="block text-[10px] font-bold text-slate-500 uppercase mb-2">Are you Owner or Agent?*</label>
+                        <label className="block text-[10px] font-bold text-slate-500 uppercase mb-2">Are you Owner or Agent?</label>
                         <div className="grid grid-cols-2 gap-2">
                           {['Owner', 'Agent'].map(t => (
                             <button key={t} type="button" onClick={() => setNewProp({...newProp, listedBy: t as any})} className={`py-3 rounded-xl text-xs font-bold border transition-all ${newProp.listedBy === t ? 'bg-indigo-600 border-indigo-600 text-white' : 'bg-slate-800 border-transparent text-slate-400'}`}>
