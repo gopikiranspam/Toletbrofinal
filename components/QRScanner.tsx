@@ -4,7 +4,7 @@ import { Camera, Search, X, QrCode, Zap, ShieldCheck, Info, Loader2, Image as Im
 import { motion, AnimatePresence } from 'framer-motion';
 
 interface QRScannerProps {
-  onScan: (code: string) => void;
+  onScan: (code: string) => Promise<void> | void;
   onClose: () => void;
 }
 
@@ -15,10 +15,12 @@ export const QRScanner: React.FC<QRScannerProps> = ({ onScan, onClose }) => {
   const [hasFlash, setHasFlash] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const html5QrCodeRef = useRef<Html5Qrcode | null>(null);
+  const readerRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     const startScanner = async () => {
+      if (!readerRef.current) return;
       try {
         const html5QrCode = new Html5Qrcode("reader");
         html5QrCodeRef.current = html5QrCode;
@@ -29,8 +31,9 @@ export const QRScanner: React.FC<QRScannerProps> = ({ onScan, onClose }) => {
           { facingMode: "environment" },
           config,
           (decodedText) => {
-            onScan(decodedText);
-            stopScanner();
+            Promise.resolve(onScan(decodedText)).then(() => {
+              stopScanner();
+            });
           },
           (errorMessage) => {
             // Quietly handle scan errors
@@ -85,9 +88,71 @@ export const QRScanner: React.FC<QRScannerProps> = ({ onScan, onClose }) => {
     }
   };
 
+  const optimizeImageForScanning = async (file: File): Promise<File> => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const img = new Image();
+        img.onload = () => {
+          const canvas = document.createElement('canvas');
+          let width = img.width;
+          let height = img.height;
+          
+          // Max dimension for scanning optimization
+          const MAX_DIM = 800;
+          if (width > MAX_DIM || height > MAX_DIM) {
+            if (width > height) {
+              height = Math.round((height * MAX_DIM) / width);
+              width = MAX_DIM;
+            } else {
+              width = Math.round((width * MAX_DIM) / height);
+              height = MAX_DIM;
+            }
+          }
+          
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext('2d');
+          if (!ctx) {
+            resolve(file); // Fallback to original
+            return;
+          }
+          
+          // Draw with high contrast / grayscale if possible
+          ctx.drawImage(img, 0, 0, width, height);
+          
+          // Apply a simple grayscale filter to help detection
+          const imageData = ctx.getImageData(0, 0, width, height);
+          const data = imageData.data;
+          for (let i = 0; i < data.length; i += 4) {
+            const avg = (data[i] + data[i + 1] + data[i + 2]) / 3;
+            data[i] = avg;     // R
+            data[i + 1] = avg; // G
+            data[i + 2] = avg; // B
+          }
+          ctx.putImageData(imageData, 0, 0);
+          
+          canvas.toBlob((blob) => {
+            if (blob) {
+              resolve(new File([blob], "optimized.png", { type: "image/png" }));
+            } else {
+              resolve(file);
+            }
+          }, 'image/png');
+        };
+        img.onerror = () => resolve(file);
+        img.src = e.target?.result as string;
+      };
+      reader.onerror = () => resolve(file);
+      reader.readAsDataURL(file);
+    });
+  };
+
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+
+    console.log(`File selected for scanning: ${file.name}, type: ${file.type}, size: ${file.size}`);
 
     // Validate file type
     const validTypes = ['image/png', 'image/jpeg', 'image/jpg', 'image/webp'];
@@ -98,26 +163,58 @@ export const QRScanner: React.FC<QRScannerProps> = ({ onScan, onClose }) => {
 
     try {
       setIsInitializing(true);
+      setError(null);
       
       // Stop camera if running to avoid conflicts
       await stopScanner();
       
-      // Ensure we have a scanner instance even if camera failed
-      if (!html5QrCodeRef.current) {
+      // Small delay to ensure camera is fully released
+      await new Promise(resolve => setTimeout(resolve, 300));
+      
+      // Ensure we have a scanner instance
+      if (!html5QrCodeRef.current && readerRef.current) {
         html5QrCodeRef.current = new Html5Qrcode("reader");
       }
 
-      // Scan the file
-      const decodedText = await html5QrCodeRef.current.scanFile(file, true);
-      
-      if (decodedText) {
-        onScan(decodedText);
-      } else {
-        throw new Error("No QR code detected");
+      console.log("Starting file scan...");
+      // Attempt 1: Standard scan
+      try {
+        const decodedText = await html5QrCodeRef.current!.scanFile(file, false);
+        if (decodedText) {
+          console.log("QR decoded successfully (v1):", decodedText);
+          await Promise.resolve(onScan(decodedText));
+          return;
+        }
+      } catch (firstErr) {
+        console.warn("First scan attempt failed, trying with showImage=true...", firstErr);
+        
+        // Attempt 2: With showImage=true
+        try {
+          const decodedText = await html5QrCodeRef.current!.scanFile(file, true);
+          if (decodedText) {
+            console.log("QR decoded successfully (v2):", decodedText);
+            await Promise.resolve(onScan(decodedText));
+            return;
+          }
+        } catch (secondErr) {
+          console.warn("Second scan attempt failed, trying optimization...", secondErr);
+          
+          // Attempt 3: Optimized image (resized + grayscale)
+          const optimizedFile = await optimizeImageForScanning(file);
+          const decodedText = await html5QrCodeRef.current!.scanFile(optimizedFile, false);
+          if (decodedText) {
+            console.log("QR decoded successfully (v3 - optimized):", decodedText);
+            await Promise.resolve(onScan(decodedText));
+            return;
+          }
+        }
       }
-    } catch (err) {
+      
+      throw new Error("No QR code detected in image");
+    } catch (err: any) {
       console.error("File scan error:", err);
-      alert("Could not find a valid QR code in this image. Please ensure the image is clear, high-resolution, and contains a scannable QR code.");
+      const errorMessage = err?.message || "Could not find a valid QR code";
+      alert(`Could not find a valid QR code in this image. \n\nError: ${errorMessage}\n\nTips:\n- Ensure the QR code is clearly visible and not blurry.\n- Use a high-resolution image.\n- Try taking a closer photo of the QR code.`);
     } finally {
       setIsInitializing(false);
       // Reset input so the same file can be selected again
@@ -125,10 +222,10 @@ export const QRScanner: React.FC<QRScannerProps> = ({ onScan, onClose }) => {
     }
   };
 
-  const handleManualSubmit = (e: React.FormEvent) => {
+  const handleManualSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (manualCode.length >= 6) {
-      onScan(manualCode.toUpperCase());
+      await Promise.resolve(onScan(manualCode.toUpperCase()));
     }
   };
 
@@ -189,7 +286,7 @@ export const QRScanner: React.FC<QRScannerProps> = ({ onScan, onClose }) => {
                   <button onClick={() => window.location.reload()} className="mt-4 px-4 py-2 bg-indigo-600 rounded-xl text-[10px] font-black uppercase tracking-widest">Retry</button>
                 </div>
               )}
-              <div id="reader" className="w-full h-full"></div>
+              <div ref={readerRef} id="reader" className="w-full h-full"></div>
               
               {/* Scanning Animation Overlay */}
               {!isInitializing && !error && (

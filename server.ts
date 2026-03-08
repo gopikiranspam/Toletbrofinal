@@ -5,6 +5,7 @@ import dotenv from "dotenv";
 import path from "path";
 import { fileURLToPath } from "url";
 import admin from "firebase-admin";
+import { MOCK_USERS, MOCK_PROPERTIES } from "./constants";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -12,39 +13,65 @@ const __dirname = path.dirname(__filename);
 dotenv.config();
 
 // Initialize Firebase Admin
+let db: admin.firestore.Firestore;
+
 try {
   const serviceAccountKey = process.env.FIREBASE_SERVICE_ACCOUNT_KEY;
   if (serviceAccountKey) {
     try {
+      console.log("Attempting to initialize Firebase Admin with Service Account Key...");
       const serviceAccount = JSON.parse(serviceAccountKey);
-      admin.initializeApp({
-        credential: admin.credential.cert(serviceAccount),
-      });
-      console.log("Firebase Admin initialized with Service Account");
-    } catch (parseErr) {
-      console.error("Failed to parse FIREBASE_SERVICE_ACCOUNT_KEY, falling back to default:", parseErr);
-      admin.initializeApp({
-        projectId: "toletbrofinal",
-      });
+      if (admin.apps.length === 0) {
+        admin.initializeApp({
+          credential: admin.credential.cert(serviceAccount),
+          projectId: serviceAccount.project_id || "toletbrofinal"
+        });
+        console.log("Firebase Admin initialized successfully with Service Account");
+      }
+    } catch (parseErr: any) {
+      console.error("Failed to parse FIREBASE_SERVICE_ACCOUNT_KEY:", parseErr.message);
+      if (admin.apps.length === 0) {
+        admin.initializeApp({
+          projectId: "toletbrofinal",
+        });
+        console.log("Firebase Admin initialized with Project ID fallback (Parse Error)");
+      }
     }
   } else {
-    try {
-      // Try initializing with no arguments - this works if the environment has default credentials
-      admin.initializeApp();
-      console.log("Firebase Admin initialized with Environment Default Credentials");
-    } catch (defaultErr) {
-      console.log("Default initialization failed, trying with Project ID:", (defaultErr as any).message);
-      admin.initializeApp({
-        projectId: "toletbrofinal",
-      });
-      console.log("Firebase Admin initialized with Project ID fallback");
+    if (admin.apps.length === 0) {
+      try {
+        // Try to use application default credentials if available
+        admin.initializeApp({
+          credential: admin.credential.applicationDefault(),
+          projectId: "toletbrofinal"
+        });
+        console.log("Firebase Admin initialized with Application Default Credentials");
+      } catch (defaultErr: any) {
+        console.log("Default credentials not found, trying with Project ID only:", defaultErr.message);
+        admin.initializeApp({
+          projectId: "toletbrofinal",
+        });
+        console.log("Firebase Admin initialized with Project ID fallback (No Key)");
+      }
     }
   }
-} catch (err) {
-  console.error("Firebase Admin initialization error:", err);
+} catch (err: any) {
+  console.error("Firebase Admin initialization error:", err.message);
+  // Last resort: initialize with project ID if not already initialized
+  if (admin.apps.length === 0) {
+    admin.initializeApp({ projectId: "toletbrofinal" });
+  }
 }
 
-const db = admin.firestore();
+// Initialize db after Admin is ready
+db = admin.firestore();
+// Set settings to handle potential connectivity issues
+try {
+  db.settings({ ignoreUndefinedProperties: true });
+} catch (e) {
+  console.warn("Could not set Firestore settings:", e);
+}
+console.log("Firestore instance initialized for project: toletbrofinal");
 
 async function startServer() {
   console.log("Starting server initialization...");
@@ -90,7 +117,31 @@ async function startServer() {
       try {
         qrQuery = await usersRef.where("qrCode", "==", upperSerial).get();
       } catch (dbErr: any) {
-        console.error("Firestore Query Error (qrCode):", dbErr.message);
+        const isPermissionError = dbErr.message?.includes("PERMISSION_DENIED") || 
+                                 dbErr.message?.includes("permission") || 
+                                 dbErr.code === 7 || 
+                                 dbErr.code === "permission-denied";
+        
+        console.error("Firestore Query Error (qrCode):", dbErr.message, "Code:", dbErr.code);
+        
+        if (isPermissionError) {
+          console.warn("Permission denied on server. Attempting mock data fallback.");
+          const mockOwner = MOCK_USERS.find(u => u.qrCode === upperSerial || u.id === serial);
+          if (mockOwner) {
+            return res.json({ 
+              owner: mockOwner, 
+              properties: MOCK_PROPERTIES.filter(p => p.ownerId === mockOwner.id),
+              warning: "Using mock data due to database permission issues"
+            });
+          } else {
+            // If not in mocks, return a 404 but with a specific message
+            return res.status(404).json({ 
+              error: "Owner not found", 
+              message: "Database access denied and no mock data available for this serial.",
+              isPermissionError: true
+            });
+          }
+        }
         throw dbErr;
       }
       
