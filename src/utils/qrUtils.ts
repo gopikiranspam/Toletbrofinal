@@ -3,11 +3,12 @@ import { QR_BASE_URL } from '../../constants';
 
 /**
  * Generates a high-resolution QR code image with a consistent format and label.
- * @param id The unique identifier (UID or Serial Number) to encode in the URL.
+ * @param id The unique identifier (UID or Serial Number) to encode in the URL if path is not provided.
  * @param label The serial number or name to display below the QR code.
+ * @param path Optional direct path to encode in the QR code (e.g., /property/123).
  * @returns A promise that resolves to a data URL of the generated image.
  */
-export const generateStandardQRImage = async (id: string, label: string): Promise<string> => {
+export const generateStandardQRImage = async (id: string, label: string, path?: string): Promise<string> => {
   const canvas = document.createElement('canvas');
   // High resolution for better scannability
   const qrSize = 800; 
@@ -23,8 +24,8 @@ export const generateStandardQRImage = async (id: string, label: string): Promis
   ctx.fillStyle = '#FFFFFF';
   ctx.fillRect(0, 0, canvas.width, canvas.height);
   
-  // URL format: https://www.toletbro.com/q/{id}
-  const qrUrl = `${QR_BASE_URL}/${id}`;
+  // URL format: https://www.toletbro.com/q/{id} or a direct path
+  const qrUrl = path ? `${window.location.origin}${path}` : `${QR_BASE_URL}/${id}`;
   
   // Generate QR Data URL with high error correction
   const qrDataUrl = await QRCode.toDataURL(qrUrl, { 

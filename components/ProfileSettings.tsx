@@ -22,6 +22,7 @@ interface ProfileSettingsProps {
   onDeleteProperty?: (id: string) => void;
   onRepostProperty?: (id: string) => void;
   setActiveTab?: (tab: string) => void;
+  dynamicUrl?: string;
 }
 
 type ToolView = 'main' | 'selection' | 'generate' | 'setup' | 'active_board' | 'privacy' | 'my_properties' | 'profile';
@@ -38,7 +39,7 @@ const AVAILABLE_TAGS = [
 ];
 
 export const ProfileSettings: React.FC<ProfileSettingsProps> = ({ 
-  user, onUpdate, onLinkBoard, onLogout, properties = [], onEditProperty, onDeleteProperty, onRepostProperty, setActiveTab
+  user, onUpdate, onLinkBoard, onLogout, properties = [], onEditProperty, onDeleteProperty, onRepostProperty, setActiveTab, dynamicUrl
 }) => {
   if (!user) return null;
 
@@ -108,7 +109,7 @@ export const ProfileSettings: React.FC<ProfileSettingsProps> = ({
     if (!user.id) return;
     try {
       const label = user.qrCode || user.id;
-      const dataUrl = await generateStandardQRImage(label, label);
+      const dataUrl = await generateStandardQRImage(label, label, dynamicUrl);
       const link = document.createElement('a');
       link.href = dataUrl;
       link.download = `ToletBro_User_QR_${label}.png`;
@@ -122,7 +123,7 @@ export const ProfileSettings: React.FC<ProfileSettingsProps> = ({
     if (!user.id) return;
     try {
       const label = user.qrCode || user.id;
-      const dataUrl = await generateStandardQRImage(label, label);
+      const dataUrl = await generateStandardQRImage(label, label, dynamicUrl);
       const printWindow = window.open('', '_blank');
       if (printWindow) {
         printWindow.document.write(`<html><body style="display:flex; justify-content:center; align-items:center; height:100vh; margin:0;"><img src="${dataUrl}" style="max-width:100%;" onload="window.print();window.close();" /></body></html>`);
@@ -203,6 +204,7 @@ export const ProfileSettings: React.FC<ProfileSettingsProps> = ({
                             <QRCodeSVG 
                               value={`${QR_BASE_URL}/${user.qrCode || user.id}`} 
                               label={user.qrCode || user.id}
+                              path={dynamicUrl}
                             />
                           </div>
                           <div className="flex-1">
@@ -620,7 +622,7 @@ export const ProfileSettings: React.FC<ProfileSettingsProps> = ({
   );
 };
 
-const QRCodeSVG: React.FC<{ value: string; label: string }> = ({ value, label }) => {
+const QRCodeSVG: React.FC<{ value: string; label: string; path?: string }> = ({ value, label, path }) => {
   const [dataUrl, setDataUrl] = useState<string>('');
   const [isLoading, setIsLoading] = useState(true);
 
@@ -634,7 +636,7 @@ const QRCodeSVG: React.FC<{ value: string; label: string }> = ({ value, label })
         if (value.includes('/')) {
           id = value.split('/').pop() || value;
         }
-        const url = await generateStandardQRImage(id, label);
+        const url = await generateStandardQRImage(id, label, path);
         setDataUrl(url);
       } catch (err) {
         console.error("QR Preview generation failed", err);

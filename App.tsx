@@ -60,6 +60,7 @@ const App: React.FC = () => {
   const [qrStatus, setQrStatus] = useState<'valid' | 'unlinked' | 'invalid' | null>(null);
   const [isQrInvalid, setIsQrInvalid] = useState(false);
   const [isOwnerLoading, setIsOwnerLoading] = useState(false);
+  const [userBoard, setUserBoard] = useState<any>(null);
 
   const normalizedSearchQuery = searchQuery.trim().toUpperCase();
   const isQrFormat = /^[A-Z]{3}\d{3}$/.test(normalizedSearchQuery);
@@ -216,6 +217,24 @@ const App: React.FC = () => {
 
     return () => unsubscribe();
   }, []);
+
+  useEffect(() => {
+    if (user?.qrCode) {
+      const q = query(collection(db, "properties"), where("code", "==", user.qrCode.toUpperCase()));
+      const unsubscribe = onSnapshot(q, (snap) => {
+        if (!snap.empty) {
+          setUserBoard({ id: snap.docs[0].id, ...snap.docs[0].data() });
+        } else {
+          setUserBoard(null);
+        }
+      }, (err) => {
+        console.error("Error fetching user board:", err);
+      });
+      return () => unsubscribe();
+    } else {
+      setUserBoard(null);
+    }
+  }, [user?.qrCode]);
   
   // Nearby search states
   const [userCoords, setUserCoords] = useState<{ lat: number, lng: number } | null>(null);
@@ -314,7 +333,7 @@ const App: React.FC = () => {
       if (ownerProperties.length === 1) {
         dynamicUrl = `/property/${ownerProperties[0].id}`;
       } else {
-        dynamicUrl = `/user/${ownerId}/my-properties`;
+        dynamicUrl = `/owner/${ownerId}/properties`;
       }
 
       // Find the assigned board for this owner
@@ -790,7 +809,7 @@ const App: React.FC = () => {
       if (ownerProperties.length === 1) {
         dynamicUrl = `/property/${ownerProperties[0].id}`;
       } else {
-        dynamicUrl = `/user/${user.id}/my-properties`;
+        dynamicUrl = `/owner/${user.id}/properties`;
       }
 
       if (!querySnapshot.empty) {
@@ -853,9 +872,10 @@ const App: React.FC = () => {
     if (!serial) return;
     const upperSerial = serial.toUpperCase();
 
-    // Reset states
+    // Reset states and show loader
     setQrStatus(null);
     setIsQrInvalid(false);
+    setIsOwnerLoading(true);
 
     let linkedOwner: User | null = null;
     let ownerProperties: any[] = [];
@@ -870,14 +890,6 @@ const App: React.FC = () => {
         if (linkedOwner) {
           setAllUsers(prev => prev.find(u => u.id === linkedOwner!.id) ? prev : [...prev, linkedOwner!]);
         }
-      } else if (response.status !== 404) {
-        const errorData = await response.json();
-        console.error("Server error during owner lookup:", errorData);
-        
-        // If it's a permission error, we should inform the user or log it specifically
-        if (errorData.code === 7 || errorData.message?.includes('permission')) {
-          console.warn("Firestore permissions are restrictive. Admin access is required for server-side lookups.");
-        }
       }
     } catch (error) {
       console.error("Error finding owner by serial/id via API:", error);
@@ -891,12 +903,13 @@ const App: React.FC = () => {
       setIsScanning(false);
       setIsNearbyActive(false);
       setSearchQuery('');
+      setIsOwnerLoading(false);
 
       if (ownerProperties.length === 1) {
         const targetUrl = `/property/${ownerProperties[0].id}`;
         navigate(targetUrl, { replace: true });
       } else if (ownerProperties.length > 1) {
-        const targetUrl = `/user/${linkedOwnerId}/my-properties`;
+        const targetUrl = `/owner/${linkedOwnerId}/properties`;
         navigate(targetUrl, { replace: true });
       } else {
         // No active properties, show the owner profile view in Home
@@ -904,80 +917,97 @@ const App: React.FC = () => {
       }
     } else {
       // Check if it's a Property QR (linked directly to a property)
-      const qProp = query(collection(db, "properties"), where("code", "==", upperSerial));
-      const propSnapshot = await getDocs(qProp);
-      
-      if (!propSnapshot.empty) {
-        const propertyData = { id: propSnapshot.docs[0].id, ...propSnapshot.docs[0].data() } as Property;
+      try {
+        const qProp = query(collection(db, "properties"), where("code", "==", upperSerial));
+        const propSnapshot = await getDocs(qProp);
         
-        setLastScannedQr(serial);
-        setSearchQuery('');
-        setIsScanning(false);
-        setIsNearbyActive(false);
-
-        if (propertyData.isSystemQR && !propertyData.ownerId) {
-          setScannedOwnerId(serial);
-          setQrStatus('unlinked');
-          setIsQrInvalid(false);
-          navigate(`/q/${serial}`, { replace: true });
-        } else {
-          const ownerId = propertyData.ownerId;
-          if (!ownerId) {
-            setQrStatus('invalid');
-            navigate('/', { replace: true });
-            return;
-          }
-
-          // Fetch properties for this owner to decide where to redirect
-          const propsQuery = query(
-            collection(db, "properties"), 
-            where("ownerId", "==", ownerId),
-            where("status", "==", "active")
-          );
-          const propsSnap = await getDocs(propsQuery);
-          const ownerProperties = propsSnap.docs
-            .map(doc => ({ id: doc.id, ...doc.data() }))
-            .filter((p: any) => !p.isSystemQR);
-
-          setScannedOwnerId(ownerId);
-          setQrStatus('valid');
-          setIsQrInvalid(false);
+        if (!propSnapshot.empty) {
+          const propertyData = { id: propSnapshot.docs[0].id, ...propSnapshot.docs[0].data() } as any;
+          
           setLastScannedQr(serial);
           setSearchQuery('');
           setIsScanning(false);
           setIsNearbyActive(false);
 
-          if (ownerProperties.length === 1) {
-            const targetUrl = `/property/${ownerProperties[0].id}`;
-            navigate(targetUrl, { replace: true });
-          } else if (ownerProperties.length > 1) {
-            const targetUrl = `/user/${ownerId}/my-properties`;
-            navigate(targetUrl, { replace: true });
+          if (propertyData.isSystemQR && !propertyData.ownerId) {
+            setScannedOwnerId(serial);
+            setQrStatus('unlinked');
+            setIsQrInvalid(false);
+            setIsOwnerLoading(false);
+            navigate(`/q/${serial}`, { replace: true });
+          } else if (propertyData.dynamicUrl) {
+            // Use the stored dynamic URL if available
+            setScannedOwnerId(propertyData.ownerId || serial);
+            setQrStatus('valid');
+            setIsQrInvalid(false);
+            setIsOwnerLoading(false);
+            navigate(propertyData.dynamicUrl, { replace: true });
           } else {
-            navigate('/', { replace: true });
-          }
-        }
-      } else {
-        // One last check: maybe it's a direct property ID
-        const propRef = doc(db, "properties", serial);
-        const propSnap = await getDoc(propRef);
-        if (propSnap.exists()) {
-          const propData = { id: propSnap.id, ...propSnap.data() } as Property;
-          if (!propData.isSystemQR) {
-            navigate(`/property/${propSnap.id}`, { replace: true });
-            setIsScanning(false);
-            return;
-          }
-        }
+            const ownerId = propertyData.ownerId;
+            if (!ownerId) {
+              setQrStatus('invalid');
+              setIsOwnerLoading(false);
+              navigate('/', { replace: true });
+              return;
+            }
 
-        setLastScannedQr(serial);
-        setScannedOwnerId(serial);
-        setSearchQuery('');
-        setIsScanning(false);
-        setIsNearbyActive(false);
-        setQrStatus('invalid');
-        setIsQrInvalid(true);
-        navigate('/', { replace: true });
+            // Fetch properties for this owner to decide where to redirect
+            const propsQuery = query(
+              collection(db, "properties"), 
+              where("ownerId", "==", ownerId),
+              where("status", "==", "active")
+            );
+            const propsSnap = await getDocs(propsQuery);
+            const ownerProperties = propsSnap.docs
+              .map(doc => ({ id: doc.id, ...doc.data() }))
+              .filter((p: any) => !p.isSystemQR);
+
+            setScannedOwnerId(ownerId);
+            setQrStatus('valid');
+            setIsQrInvalid(false);
+            setLastScannedQr(serial);
+            setSearchQuery('');
+            setIsScanning(false);
+            setIsNearbyActive(false);
+            setIsOwnerLoading(false);
+
+            if (ownerProperties.length === 1) {
+              const targetUrl = `/property/${ownerProperties[0].id}`;
+              navigate(targetUrl, { replace: true });
+            } else if (ownerProperties.length > 1) {
+              const targetUrl = `/owner/${ownerId}/properties`;
+              navigate(targetUrl, { replace: true });
+            } else {
+              navigate('/', { replace: true });
+            }
+          }
+        } else {
+          // One last check: maybe it's a direct property ID
+          const propRef = doc(db, "properties", serial);
+          const propSnap = await getDoc(propRef);
+          if (propSnap.exists()) {
+            const propData = { id: propSnap.id, ...propSnap.data() } as Property;
+            if (!propData.isSystemQR) {
+              setIsOwnerLoading(false);
+              navigate(`/property/${propSnap.id}`, { replace: true });
+              setIsScanning(false);
+              return;
+            }
+          }
+
+          setLastScannedQr(serial);
+          setScannedOwnerId(serial);
+          setSearchQuery('');
+          setIsScanning(false);
+          setIsNearbyActive(false);
+          setQrStatus('invalid');
+          setIsQrInvalid(true);
+          setIsOwnerLoading(false);
+          navigate('/', { replace: true });
+        }
+      } catch (err) {
+        console.error("Error in handleScan fallback:", err);
+        setIsOwnerLoading(false);
       }
     }
   }, [navigate]);
@@ -1113,7 +1143,17 @@ const App: React.FC = () => {
 
   const HomeView = () => (
     <motion.div key="home" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} className="space-y-8 md:space-y-12">
-      {!scannedOwnerId ? (
+      {isOwnerLoading ? (
+        <div className="min-h-[60vh] flex flex-col items-center justify-center text-center px-4">
+          <div className="bg-indigo-600/10 p-8 rounded-[3rem] mb-8 border border-indigo-500/20">
+            <Loader2 className="w-16 h-16 text-indigo-500 animate-spin" />
+          </div>
+          <h2 className="text-2xl font-black mb-4 uppercase tracking-widest">Resolving Smart Board...</h2>
+          <p className="text-slate-400 max-w-md mx-auto leading-relaxed">
+            Please wait while we fetch the property details and owner information.
+          </p>
+        </div>
+      ) : !scannedOwnerId ? (
         <div className="text-center max-w-3xl mx-auto space-y-4 md:space-y-6 py-6 md:py-10 px-4">
           <h1 className="text-3xl sm:text-4xl md:text-6xl font-extrabold tracking-tight">
             Find Your Perfect <span className="text-indigo-500">Living Space</span>
@@ -1646,6 +1686,7 @@ const App: React.FC = () => {
               onDeleteProperty={handleDeleteProperty}
               onRepostProperty={handleRepostProperty}
               setActiveTab={handleNavigate}
+              dynamicUrl={userBoard?.dynamicUrl}
             />
           } />
           <Route path="/admin" element={<AdminConsole />} />
@@ -1667,6 +1708,7 @@ const App: React.FC = () => {
                     onDeleteProperty={handleDeleteProperty}
                     onRepostProperty={handleRepostProperty}
                     setActiveTab={handleNavigate}
+                    dynamicUrl={userBoard?.dynamicUrl}
                   />
                 </div>
               ) : (
