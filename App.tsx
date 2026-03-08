@@ -1032,20 +1032,21 @@ const App: React.FC = () => {
           navigate('/', { replace: true });
         }
       } catch (err: any) {
-        console.error("Error in handleScan fallback:", err);
+        const isPermissionError = err.message?.includes("permission") || err.code === 'permission-denied';
         
-        // Final fallback to mock data if permissions are denied
-        if (err.message?.includes("permission") || err.code === 'permission-denied') {
+        if (isPermissionError) {
+          console.warn("Firestore Permission Denied in handleScan fallback. Using mock data.");
           const mockOwner = MOCK_USERS.find(u => u.qrCode === upperSerial || u.id === serial);
           if (mockOwner) {
-            console.log("Found owner in mock data fallback after permission error");
             setScannedOwnerId(mockOwner.id);
             setQrStatus('valid');
             setIsOwnerLoading(false);
             navigate(`/owner/${mockOwner.id}/properties`, { replace: true });
             return;
           }
-          alert("Scan failed: Access denied. Please ensure you are scanning a valid board.");
+          alert("Scan failed: Database access denied. Please update Firestore Security Rules.");
+        } else {
+          console.error("Error in handleScan fallback:", err);
         }
         setIsOwnerLoading(false);
       }

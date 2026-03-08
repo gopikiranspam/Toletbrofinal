@@ -122,10 +122,8 @@ async function startServer() {
                                  dbErr.code === 7 || 
                                  dbErr.code === "permission-denied";
         
-        console.error("Firestore Query Error (qrCode):", dbErr.message, "Code:", dbErr.code);
-        
         if (isPermissionError) {
-          console.warn("Permission denied on server. Attempting mock data fallback.");
+          console.warn("Firestore Permission Denied (qrCode lookup). Using mock data fallback.");
           const mockOwner = MOCK_USERS.find(u => u.qrCode === upperSerial || u.id === serial);
           if (mockOwner) {
             return res.json({ 
@@ -134,14 +132,15 @@ async function startServer() {
               warning: "Using mock data due to database permission issues"
             });
           } else {
-            // If not in mocks, return a 404 but with a specific message
             return res.status(404).json({ 
               error: "Owner not found", 
-              message: "Database access denied and no mock data available for this serial.",
+              message: "Database access denied and no mock data available.",
               isPermissionError: true
             });
           }
         }
+        
+        console.error("Firestore Query Error (qrCode):", dbErr.message, "Code:", dbErr.code);
         throw dbErr;
       }
       

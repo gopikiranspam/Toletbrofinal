@@ -1,0 +1,22 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Users collection rules
+    match /users/{userId} {
+      // Allow anyone to read user profiles (needed for QR owner lookup)
+      allow read: if true;
+      // Only the user themselves can write to their profile
+      allow write: if request.auth != null && request.auth.uid == userId;
+    }
+    
+    // Properties collection rules
+    match /properties/{propertyId} {
+      // Allow anyone to read properties (needed for search and QR scanning)
+      allow read: if true;
+      // Allow any authenticated user to create/update properties
+      // In production, you'd restrict 'update' to the ownerId
+      allow create: if request.auth != null;
+      allow update, delete: if request.auth != null && (resource.data.ownerId == request.auth.uid || request.auth.token.admin == true);
+    }
+  }
+}
