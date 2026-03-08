@@ -13,10 +13,33 @@ dotenv.config();
 
 // Initialize Firebase Admin
 try {
-  admin.initializeApp({
-    projectId: "toletbrofinal",
-  });
-  console.log("Firebase Admin initialized");
+  const serviceAccountKey = process.env.FIREBASE_SERVICE_ACCOUNT_KEY;
+  if (serviceAccountKey) {
+    try {
+      const serviceAccount = JSON.parse(serviceAccountKey);
+      admin.initializeApp({
+        credential: admin.credential.cert(serviceAccount),
+      });
+      console.log("Firebase Admin initialized with Service Account");
+    } catch (parseErr) {
+      console.error("Failed to parse FIREBASE_SERVICE_ACCOUNT_KEY, falling back to default:", parseErr);
+      admin.initializeApp({
+        projectId: "toletbrofinal",
+      });
+    }
+  } else {
+    try {
+      // Try initializing with no arguments - this works if the environment has default credentials
+      admin.initializeApp();
+      console.log("Firebase Admin initialized with Environment Default Credentials");
+    } catch (defaultErr) {
+      console.log("Default initialization failed, trying with Project ID:", (defaultErr as any).message);
+      admin.initializeApp({
+        projectId: "toletbrofinal",
+      });
+      console.log("Firebase Admin initialized with Project ID fallback");
+    }
+  }
 } catch (err) {
   console.error("Firebase Admin initialization error:", err);
 }
@@ -31,6 +54,26 @@ async function startServer() {
   app.use(express.json());
   console.log("Express middleware configured");
 
+  // Debug Firebase Status
+  app.get("/api/debug/firebase", async (req, res) => {
+    try {
+      const collections = await db.listCollections();
+      res.json({
+        status: "connected",
+        initialized: !!admin.apps.length,
+        collections: collections.map(c => c.id),
+        usingServiceAccount: !!process.env.FIREBASE_SERVICE_ACCOUNT_KEY
+      });
+    } catch (error: any) {
+      res.status(500).json({
+        status: "error",
+        message: error.message,
+        initialized: !!admin.apps.length,
+        hasKey: !!process.env.FIREBASE_SERVICE_ACCOUNT_KEY
+      });
+    }
+  });
+
   // QR Code Owner Lookup API
   app.get("/api/owner/lookup", async (req, res) => {
     const { serial } = req.query;
@@ -43,7 +86,13 @@ async function startServer() {
       
       // 1. Try finding by qrCode field
       const usersRef = db.collection("users");
-      const qrQuery = await usersRef.where("qrCode", "==", upperSerial).get();
+      let qrQuery;
+      try {
+        qrQuery = await usersRef.where("qrCode", "==", upperSerial).get();
+      } catch (dbErr: any) {
+        console.error("Firestore Query Error (qrCode):", dbErr.message);
+        throw dbErr;
+      }
       
       let ownerData: any = null;
 
@@ -52,31 +101,51 @@ async function startServer() {
         ownerData = { ...doc.data(), id: doc.id };
       } else {
         // 2. Try finding by document ID
-        const userDoc = await usersRef.doc(serial as string).get();
-        if (userDoc.exists) {
-          ownerData = { ...userDoc.data(), id: userDoc.id };
+        try {
+          const userDoc = await usersRef.doc(serial as string).get();
+          if (userDoc.exists) {
+            ownerData = { ...userDoc.data(), id: userDoc.id };
+          }
+        } catch (dbErr: any) {
+          console.error("Firestore Doc Error (userId):", dbErr.message);
+          // Don't throw here, maybe it's just not found by ID
         }
       }
 
       if (!ownerData) {
+        console.log(`No owner found for serial: ${upperSerial}`);
         return res.status(404).json({ error: "Owner not found" });
       }
 
+      console.log(`Owner found: ${ownerData.id}. Fetching properties...`);
+
       // 3. Fetch active properties for this owner
       const propsRef = db.collection("properties");
-      const propsQuery = await propsRef
-        .where("ownerId", "==", ownerData.id)
-        .where("status", "==", "active")
-        .get();
+      let propsQuery;
+      try {
+        propsQuery = await propsRef
+          .where("ownerId", "==", ownerData.id)
+          .where("status", "==", "active")
+          .get();
+      } catch (dbErr: any) {
+        console.error("Firestore Properties Query Error:", dbErr.message);
+        // We have the owner, so we can still return the owner even if properties fail
+        return res.json({ owner: ownerData, properties: [], warning: "Failed to fetch properties" });
+      }
 
       const properties = propsQuery.docs
         .map(doc => ({ id: doc.id, ...doc.data() }))
         .filter((p: any) => !p.isSystemQR);
 
+      console.log(`Found ${properties.length} properties for owner ${ownerData.id}`);
       res.json({ owner: ownerData, properties });
-    } catch (error) {
-      console.error("Owner Lookup Error:", error);
-      res.status(500).json({ error: "Failed to lookup owner" });
+    } catch (error: any) {
+      console.error("Owner Lookup Error Detail:", error);
+      res.status(500).json({ 
+        error: "Failed to lookup owner", 
+        message: error.message,
+        code: error.code 
+      });
     }
   });
 

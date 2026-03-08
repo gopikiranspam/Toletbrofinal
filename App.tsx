@@ -176,14 +176,6 @@ const App: React.FC = () => {
           const data = await response.json();
           const userData = data.owner;
           setAllUsers(prev => prev.find(u => u.id === userData.id) ? prev : [...prev, userData]);
-        } else {
-          // Fallback to client-side
-          const q = query(collection(db, "users"), where("qrCode", "==", normalizedSearchQuery));
-          const querySnapshot = await getDocs(q);
-          if (!querySnapshot.empty) {
-            const userData = { ...querySnapshot.docs[0].data(), id: querySnapshot.docs[0].id } as User;
-            setAllUsers(prev => prev.find(u => u.id === userData.id) ? prev : [...prev, userData]);
-          }
         }
       } catch (error: any) {
         if (error.code !== 'permission-denied') {
@@ -879,43 +871,16 @@ const App: React.FC = () => {
           setAllUsers(prev => prev.find(u => u.id === linkedOwner!.id) ? prev : [...prev, linkedOwner!]);
         }
       } else if (response.status !== 404) {
-        console.error("Server error during owner lookup:", await response.text());
+        const errorData = await response.json();
+        console.error("Server error during owner lookup:", errorData);
+        
+        // If it's a permission error, we should inform the user or log it specifically
+        if (errorData.code === 7 || errorData.message?.includes('permission')) {
+          console.warn("Firestore permissions are restrictive. Admin access is required for server-side lookups.");
+        }
       }
     } catch (error) {
       console.error("Error finding owner by serial/id via API:", error);
-      
-      // Fallback to client-side if API fails (though it might hit permission errors)
-      try {
-        const q = query(collection(db, "users"), where("qrCode", "==", upperSerial));
-        const querySnapshot = await getDocs(q);
-        
-        if (!querySnapshot.empty) {
-          linkedOwner = { ...querySnapshot.docs[0].data(), id: querySnapshot.docs[0].id } as User;
-        } else {
-          const userRef = doc(db, "users", serial);
-          const userSnap = await getDoc(userRef);
-          if (userSnap.exists()) {
-            linkedOwner = { ...userSnap.data(), id: userSnap.id } as User;
-          }
-        }
-
-        if (linkedOwner) {
-          setAllUsers(prev => prev.find(u => u.id === linkedOwner!.id) ? prev : [...prev, linkedOwner!]);
-          
-          // Fetch properties for this owner directly from Firestore for reliability
-          const propsQuery = query(
-            collection(db, "properties"), 
-            where("ownerId", "==", linkedOwner.id),
-            where("status", "==", "active")
-          );
-          const propsSnap = await getDocs(propsQuery);
-          ownerProperties = propsSnap.docs
-            .map(doc => ({ id: doc.id, ...doc.data() }))
-            .filter((p: any) => !p.isSystemQR);
-        }
-      } catch (clientError) {
-        console.error("Fallback client-side lookup also failed:", clientError);
-      }
     }
 
     if (linkedOwner) {
