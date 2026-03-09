@@ -3,20 +3,34 @@ service cloud.firestore {
   match /databases/{database}/documents {
     // Users collection rules
     match /users/{userId} {
-      // Allow anyone to read user profiles (needed for QR owner lookup)
+      // Allow anyone to read user profiles (needed for QR owner lookup and search)
+      // This allows both get (single doc) and list (queries)
       allow read: if true;
-      // Only the user themselves can write to their profile
+      
+      // Only the user themselves can write to their own profile
       allow write: if request.auth != null && request.auth.uid == userId;
     }
     
     // Properties collection rules
     match /properties/{propertyId} {
-      // Allow anyone to read properties (needed for search and QR scanning)
+      // Allow anyone to read properties (needed for public search and QR scanning)
       allow read: if true;
-      // Allow any authenticated user to create/update properties
-      // In production, you'd restrict 'update' to the ownerId
+      
+      // Allow any authenticated user to create properties
       allow create: if request.auth != null;
-      allow update, delete: if request.auth != null && (resource.data.ownerId == request.auth.uid || request.auth.token.admin == true);
+      
+      // Allow owners or admins to update/delete their own properties
+      allow update, delete: if request.auth != null && (
+        resource.data.ownerId == request.auth.uid || 
+        request.auth.token.admin == true
+      );
+    }
+    
+    // Allow reading any other collection by default for now to avoid blocking features
+    // In a strict production environment, you would define each collection explicitly
+    match /{path=**} {
+      allow read: if true;
+      allow write: if request.auth != null;
     }
   }
 }

@@ -10,6 +10,7 @@ import { ProfileSettings } from './components/ProfileSettings';
 import { AdminConsole } from './components/AdminConsole';
 import { PropertyDetails } from './components/PropertyDetails';
 import { MyProperties } from './components/MyProperties';
+import { SearchResults } from './components/SearchResults';
 import { User, Property, UserType } from './types';
 import { MOCK_PROPERTIES, MOCK_TESTIMONIALS, MOCK_USERS } from './constants';
 import { gemini } from './services/geminiService';
@@ -321,6 +322,12 @@ const App: React.FC = () => {
 
   const updateOwnerDynamicUrl = async (ownerId: string) => {
     try {
+      // Fetch user to get QR code
+      const userRef = doc(db, 'users', ownerId);
+      const userSnap = await getDoc(userRef);
+      const userData = userSnap.exists() ? userSnap.data() as User : null;
+      const qrCode = userData?.qrCode || ownerId;
+
       const propsQuery = query(
         collection(db, "properties"), 
         where("ownerId", "==", ownerId),
@@ -329,12 +336,7 @@ const App: React.FC = () => {
       const propsSnap = await getDocs(propsQuery);
       const ownerProperties = propsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       
-      let dynamicUrl = '';
-      if (ownerProperties.length === 1) {
-        dynamicUrl = `/property/${ownerProperties[0].id}`;
-      } else {
-        dynamicUrl = `/owner/${ownerId}/properties`;
-      }
+      let dynamicUrl = `/search/${ownerId}/${qrCode}`;
 
       // Find the assigned board for this owner
       const boardQuery = query(
@@ -805,12 +807,7 @@ const App: React.FC = () => {
       const propsSnap = await getDocs(propsQuery);
       const ownerProperties = propsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       
-      let dynamicUrl = '';
-      if (ownerProperties.length === 1) {
-        dynamicUrl = `/property/${ownerProperties[0].id}`;
-      } else {
-        dynamicUrl = `/owner/${user.id}/properties`;
-      }
+      let dynamicUrl = `/search/${user.id}/${code}`;
 
       if (!querySnapshot.empty) {
         const propDoc = querySnapshot.docs[0];
@@ -927,16 +924,9 @@ const App: React.FC = () => {
       setSearchQuery('');
       setIsOwnerLoading(false);
 
-      if (ownerProperties.length === 1) {
-        const targetUrl = `/property/${ownerProperties[0].id}`;
-        navigate(targetUrl, { replace: true });
-      } else if (ownerProperties.length > 1) {
-        const targetUrl = `/owner/${linkedOwnerId}/properties`;
-        navigate(targetUrl, { replace: true });
-      } else {
-        // No active properties, show the owner profile view in Home
-        navigate('/', { replace: true });
-      }
+      // Redirect to the new Search Results page
+      const targetUrl = `/search/${linkedOwnerId}/${serial}`;
+      navigate(targetUrl, { replace: true });
     } else {
       // Check if it's a Property QR (linked directly to a property)
       console.log("API lookup returned no owner, trying client-side fallback...");
@@ -995,15 +985,9 @@ const App: React.FC = () => {
             setIsNearbyActive(false);
             setIsOwnerLoading(false);
 
-            if (ownerProperties.length === 1) {
-              const targetUrl = `/property/${ownerProperties[0].id}`;
-              navigate(targetUrl, { replace: true });
-            } else if (ownerProperties.length > 1) {
-              const targetUrl = `/owner/${ownerId}/properties`;
-              navigate(targetUrl, { replace: true });
-            } else {
-              navigate('/', { replace: true });
-            }
+            // Redirect to the new Search Results page
+            const targetUrl = `/search/${ownerId}/${serial}`;
+            navigate(targetUrl, { replace: true });
           }
         } else {
           // One last check: maybe it's a direct property ID
@@ -1041,12 +1025,18 @@ const App: React.FC = () => {
             setScannedOwnerId(mockOwner.id);
             setQrStatus('valid');
             setIsOwnerLoading(false);
-            navigate(`/owner/${mockOwner.id}/properties`, { replace: true });
+            navigate(`/search/${mockOwner.id}/${serial}`, { replace: true });
             return;
           }
-          alert("Scan failed: Database access denied. Please update Firestore Security Rules.");
+          
+          // Provide a more helpful error message for the user
+          const errorMsg = "Scan failed: Database access denied.\n\n" + 
+                          "This usually means your Firestore Security Rules are not updated in the Firebase Console.\n\n" +
+                          "Please copy the rules from 'firestore.rules' in your project and paste them into the Firebase Console > Firestore > Rules tab.";
+          alert(errorMsg);
         } else {
           console.error("Error in handleScan fallback:", err);
+          alert(`Scan failed: ${err.message || "Unknown error"}`);
         }
         setIsOwnerLoading(false);
       }
@@ -1732,6 +1722,7 @@ const App: React.FC = () => {
           } />
           <Route path="/admin" element={<AdminConsole />} />
           <Route path="/user/:userId/my-properties" element={<MyPropertiesWrapper />} />
+          <Route path="/search/:ownerId/:qrSerial" element={<SearchResults />} />
           <Route path="/q/:serialNumber" element={<HomeView />} />
           <Route path="/owner/:ownerId/properties" element={<MyPropertiesWrapper />} />
           <Route path="/property/:propertyId" element={<HomeView />} />
