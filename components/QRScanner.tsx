@@ -22,53 +22,96 @@ export const QRScanner: React.FC<QRScannerProps> = ({ onScan, onClose }) => {
     const startScanner = async () => {
       if (!readerRef.current) return;
       try {
+        setIsInitializing(true);
+        setError(null);
+
+        // Ensure any previous instance is cleaned up
+        if (html5QrCodeRef.current) {
+          try {
+            if (html5QrCodeRef.current.isScanning) {
+              await html5QrCodeRef.current.stop();
+            }
+          } catch (e) {
+            console.warn("Cleanup error:", e);
+          }
+        }
+
         const html5QrCode = new Html5Qrcode("reader");
         html5QrCodeRef.current = html5QrCode;
 
-        const config = { fps: 20, qrbox: { width: 250, height: 250 } };
+        const config = { 
+          fps: 20, 
+          qrbox: { width: 250, height: 250 },
+          aspectRatio: 1.0
+        };
         
-        await html5QrCode.start(
-          { facingMode: "environment" },
-          config,
-          (decodedText) => {
-            Promise.resolve(onScan(decodedText)).then(() => {
+        // Try to start with environment camera first
+        try {
+          await html5QrCode.start(
+            { facingMode: "environment" },
+            config,
+            (decodedText) => {
+              onScan(decodedText);
               stopScanner();
-            });
-          },
-          (errorMessage) => {
-            // Quietly handle scan errors
-          }
-        );
+            },
+            () => {} // Ignore scan errors
+          );
+        } catch (envErr) {
+          console.warn("Environment camera failed, trying default...", envErr);
+          // Fallback to any available camera
+          await html5QrCode.start(
+            { facingMode: "user" },
+            config,
+            (decodedText) => {
+              onScan(decodedText);
+              stopScanner();
+            },
+            () => {}
+          );
+        }
 
         // Check for flash support
         try {
           const capabilities = html5QrCode.getRunningTrackCapabilities();
           setHasFlash(!!(capabilities as any).torch);
         } catch (capErr) {
-          console.warn("Could not get camera capabilities:", capErr);
           setHasFlash(false);
         }
         
         setIsInitializing(false);
-      } catch (err) {
+      } catch (err: any) {
         console.error("Scanner init error:", err);
-        setError("Could not access camera. Please check permissions.");
+        let msg = "Could not access camera.";
+        if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
+          msg = "Camera permission denied. Please enable camera access in your browser settings and try again.";
+        } else if (err.name === 'NotFoundError' || err.name === 'DevicesNotFoundError') {
+          msg = "No camera found on this device.";
+        } else if (err.name === 'NotReadableError' || err.name === 'TrackStartError') {
+          msg = "Camera is already in use by another application.";
+        }
+        setError(msg);
         setIsInitializing(false);
       }
     };
 
-    const timer = setTimeout(startScanner, 500);
+    // Start immediately since it's triggered by user click
+    startScanner();
 
     return () => {
-      clearTimeout(timer);
       stopScanner();
     };
   }, [onScan]);
 
+  const handleRetry = () => {
+    window.location.reload(); // Sometimes a full reload is needed to reset permission state in iframes
+  };
+
   const stopScanner = async () => {
-    if (html5QrCodeRef.current && html5QrCodeRef.current.isScanning) {
+    if (html5QrCodeRef.current) {
       try {
-        await html5QrCodeRef.current.stop();
+        if (html5QrCodeRef.current.isScanning) {
+          await html5QrCodeRef.current.stop();
+        }
       } catch (err) {
         console.error("Failed to stop scanner", err);
       }
@@ -283,7 +326,7 @@ export const QRScanner: React.FC<QRScannerProps> = ({ onScan, onClose }) => {
                 <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 z-20 bg-slate-950 p-6 text-center">
                   <Camera className="w-8 h-8 text-rose-500 mb-2" />
                   <p className="text-xs font-bold text-slate-400">{error}</p>
-                  <button onClick={() => window.location.reload()} className="mt-4 px-4 py-2 bg-indigo-600 rounded-xl text-[10px] font-black uppercase tracking-widest">Retry</button>
+                  <button onClick={handleRetry} className="mt-4 px-4 py-2 bg-indigo-600 rounded-xl text-[10px] font-black uppercase tracking-widest">Grant Permission & Retry</button>
                 </div>
               )}
               <div ref={readerRef} id="reader" className="w-full h-full"></div>
